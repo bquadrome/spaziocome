@@ -298,6 +298,42 @@ export async function setBookingStatus(id, status) {
   return { ok: true }
 }
 
+function isUuid(id) {
+  return typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
+}
+
+export async function removeBooking(id) {
+  if (!isUuid(id)) return { ok: false, error: 'Prenotazione non valida.' }
+  const { error: occErr } = await supabase.from('occupancy').delete().eq('booking_id', id)
+  if (occErr) return { ok: false, error: failMessage(occErr) }
+  const { error } = await supabase.from('bookings').delete().eq('id', id)
+  if (error) return { ok: false, error: failMessage(error) }
+  await refreshStore()
+  return { ok: true }
+}
+
+export async function removeBookingOccurrence(id, date, slotId) {
+  if (!isUuid(id)) return { ok: false, error: 'Prenotazione non valida.' }
+  const current = state.bookings.find((item) => item.id === id)
+  if (!current) return { ok: false, error: 'Prenotazione non trovata.' }
+  const dates = Array.isArray(current.dates) ? current.dates : []
+  const slots = Array.isArray(current.slotIds) ? current.slotIds : []
+
+  if (dates.length > 1 && date) {
+    const nextDates = dates.filter((item) => item !== date)
+    if (!nextDates.length) return removeBooking(id)
+    return patchBooking(id, { dates: nextDates })
+  }
+
+  if (slots.length > 1 && slotId) {
+    const nextSlots = slots.filter((item) => item !== slotId)
+    if (!nextSlots.length) return removeBooking(id)
+    return patchBooking(id, { slotIds: nextSlots })
+  }
+
+  return removeBooking(id)
+}
+
 export async function patchBooking(id, patch) {
   const current = state.bookings.find((item) => item.id === id)
   if (!current) return { ok: false, error: 'Prenotazione non trovata.' }
@@ -365,6 +401,27 @@ export async function setGuestStatus(id, status) {
   if (error) return { ok: false, error: failMessage(error) }
   await refreshStore()
   return { ok: true }
+}
+
+export async function removeGuest(id) {
+  if (!isUuid(id)) return { ok: false, error: 'Ospite non valido.' }
+  const { error } = await supabase.from('guests').delete().eq('id', id)
+  if (error) return { ok: false, error: failMessage(error) }
+  await refreshStore()
+  return { ok: true }
+}
+
+export async function removeGuestOccurrence(id, date) {
+  if (!isUuid(id)) return { ok: false, error: 'Ospite non valido.' }
+  const current = state.guests.find((item) => item.id === id)
+  if (!current) return { ok: false, error: 'Ospite non trovato.' }
+  const dates = Array.isArray(current.dates) ? current.dates : []
+  if (dates.length > 1 && date) {
+    const nextDates = dates.filter((item) => item !== date)
+    if (!nextDates.length) return removeGuest(id)
+    return patchGuest(id, { dates: nextDates })
+  }
+  return removeGuest(id)
 }
 
 export function splitName(title) {

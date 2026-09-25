@@ -11,6 +11,8 @@ import {
   patchBooking,
   addBooking,
   setBookingStatus,
+  removeBookingOccurrence,
+  formatISO,
   splitName,
   todayISO,
   useBookingStore,
@@ -82,6 +84,8 @@ export default function AdminCalendar() {
   const [cursor, setCursor] = useState({ y: now.getFullYear(), m: now.getMonth() })
   const [filter, setFilter] = useState('all')
   const [openId, setOpenId] = useState('')
+  const [focusDate, setFocusDate] = useState('')
+  const [focusSlotId, setFocusSlotId] = useState('')
   const [form, setForm] = useState(null)
   const [error, setError] = useState('')
   const [guestModal, setGuestModal] = useState(null)
@@ -114,28 +118,33 @@ export default function AdminCalendar() {
       const desk = (Array.isArray(event?.stations) ? event.stations : []).find((s) => s.id === item.stationId)?.label
       const who = desk ? `${name} (${desk})` : name
       const dates = Array.isArray(item.dates) ? item.dates : []
-      const chips = slots.length
-        ? slots.map((slot) => ({
-            key: `${item.id}-${slot.id}`,
-            kind: 'booking',
-            id: item.id,
-            time: slot.start,
-            text: `${slot.start} ${space} - ${who}`,
-            color: EVENT_COLORS[item.eventId],
-            off: item.status !== 'active',
-          }))
-        : [
-            {
-              key: item.id,
+      for (const date of dates) {
+        if (slots.length) {
+          for (const slot of slots) {
+            push(date, {
+              key: `${item.id}-${slot.id}-${date}`,
               kind: 'booking',
               id: item.id,
-              time: '',
-              text: `${space} - ${name}`,
+              slotId: slot.id,
+              time: slot.start,
+              text: `${slot.start} ${space} - ${who}`,
               color: EVENT_COLORS[item.eventId],
               off: item.status !== 'active',
-            },
-          ]
-      for (const date of dates) chips.forEach((chip) => push(date, chip))
+            })
+          }
+        } else {
+          push(date, {
+            key: `${item.id}-${date}`,
+            kind: 'booking',
+            id: item.id,
+            slotId: '',
+            time: '',
+            text: `${space} - ${name}`,
+            color: EVENT_COLORS[item.eventId],
+            off: item.status !== 'active',
+          })
+        }
+      }
     }
     for (const item of visibleGuests) {
       const name = [item.firstName, item.lastName].filter(Boolean).join(' ') || 'Ospite'
@@ -189,20 +198,26 @@ export default function AdminCalendar() {
     const eventId = SERVICES.some((item) => item.id === filter) ? filter : 'coworking'
     setGuestModal(null)
     setOpenId('new')
+    setFocusDate(date || todayISO())
+    setFocusSlotId('')
     setError('')
     setForm(emptyForm(date || todayISO(), eventId))
   }
 
-  function openBooking(id) {
+  function openBooking(id, date, slotId) {
     const item = bookings.find((b) => b.id === id)
     if (!item) return
     setOpenId(id)
+    setFocusDate(date || '')
+    setFocusSlotId(slotId || '')
     setError('')
     setForm(formFromBooking(item, events))
   }
 
   function closeModal() {
     setOpenId('')
+    setFocusDate('')
+    setFocusSlotId('')
     setForm(null)
     setError('')
   }
@@ -346,10 +361,10 @@ export default function AdminCalendar() {
                         e.stopPropagation()
                         if (chip.kind === 'guest') {
                           const item = guests.find((g) => g.id === chip.id)
-                          if (item) setGuestModal({ type: 'edit', guest: item })
+                          if (item) setGuestModal({ type: 'edit', guest: item, date: cell.iso })
                           return
                         }
-                        openBooking(chip.id)
+                        openBooking(chip.id, cell.iso, chip.slotId)
                       }}
                     >
                       {chip.text}
@@ -482,23 +497,47 @@ export default function AdminCalendar() {
                 Chiudi
               </button>
               {!isNew && booking ? (
-                <button
-                  className="btn-danger"
-                  type="button"
-                  onClick={async () => {
-                    const result = await setBookingStatus(
-                      booking.id,
-                      booking.status === 'active' ? 'cancelled' : 'active',
-                    )
-                    if (!result.ok) {
-                      setError(result.error)
-                      return
-                    }
-                    closeModal()
-                  }}
-                >
-                  {booking.status === 'active' ? 'Annulla attività' : 'Riattiva attività'}
-                </button>
+                <>
+                  <button
+                    className="btn-danger"
+                    type="button"
+                    onClick={async () => {
+                      const result = await setBookingStatus(
+                        booking.id,
+                        booking.status === 'active' ? 'cancelled' : 'active',
+                      )
+                      if (!result.ok) {
+                        setError(result.error)
+                        return
+                      }
+                      closeModal()
+                    }}
+                  >
+                    {booking.status === 'active' ? 'Annulla attività' : 'Riattiva attività'}
+                  </button>
+                  <button
+                    className="btn-danger is-fill"
+                    type="button"
+                    onClick={async () => {
+                      const manyDays = (booking.dates ?? []).length > 1
+                      const label = focusDate ? formatISO(focusDate) : ''
+                      const ok = window.confirm(
+                        manyDays && focusDate
+                          ? `Eliminare solo l’attività del ${label}? Le altre date restano.`
+                          : 'Eliminare definitivamente questa prenotazione? L’azione non si può annullare.',
+                      )
+                      if (!ok) return
+                      const result = await removeBookingOccurrence(booking.id, focusDate, focusSlotId)
+                      if (!result.ok) {
+                        setError(result.error)
+                        return
+                      }
+                      closeModal()
+                    }}
+                  >
+                    Elimina
+                  </button>
+                </>
               ) : null}
             </div>
           </form>
@@ -507,7 +546,7 @@ export default function AdminCalendar() {
 
       {guestModal?.type === 'new' ? <GuestModal onClose={() => setGuestModal(null)} /> : null}
       {guestModal?.type === 'edit' ? (
-        <GuestModal guest={guestModal.guest} onClose={() => setGuestModal(null)} />
+        <GuestModal guest={guestModal.guest} date={guestModal.date} onClose={() => setGuestModal(null)} />
       ) : null}
     </div>
   )

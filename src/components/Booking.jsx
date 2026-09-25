@@ -329,7 +329,7 @@ export default function Booking({ initialId = '', onClose }) {
                               onClick={() => toggleSlot(slot.id)}
                             >
                               {slot.start} – {slot.end}
-                              {busy ? ' (pieno)' : cap > 1 ? ` · ${left}` : ''}
+                              {busy ? ' (pieno)' : cap > 1 && !config.hasStations ? ` · ${left}` : ''}
                             </button>
                           )
                         })}

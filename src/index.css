@@ -1611,14 +1611,14 @@ button.btn {
 
 .socials {
   display: flex;
-  gap: 5px;
+  gap: 8px;
 }
 
 .socials a {
-  width: 39px;
-  height: 39px;
+  width: 48px;
+  height: 48px;
   margin: 0;
-  border-radius: 39px;
+  border-radius: 48px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   display: flex;
   align-items: center;
@@ -1626,8 +1626,8 @@ button.btn {
 }
 
 .socials img {
-  width: 15px;
-  height: 15px;
+  width: 20px;
+  height: 20px;
 }
 
 @media (max-width: 900px) {
@@ -2578,6 +2578,12 @@ button.btn {
   border: 1px solid #f1b0b0;
   background: var(--white);
   color: #d32020;
+}
+
+.btn-danger.is-fill {
+  background: #d32020;
+  border-color: #d32020;
+  color: #fff;
 }
 
 .admin-cal {

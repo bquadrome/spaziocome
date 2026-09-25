@@ -39,7 +39,7 @@ export default function Footer() {
               target="_blank"
               rel="noreferrer"
             >
-              <img src="/assets/icon-social-1.svg" alt="" width={15} height={15} />
+              <img src="/assets/icon-social-1.svg" alt="" width={20} height={20} />
             </a>
             <a
               href="https://www.instagram.com/"
@@ -47,7 +47,7 @@ export default function Footer() {
               target="_blank"
               rel="noreferrer"
             >
-              <img src="/assets/icon-social-2.svg" alt="" width={15} height={15} />
+              <img src="/assets/icon-social-2.svg" alt="" width={20} height={20} />
             </a>
             <a
               href="https://www.linkedin.com/company/spazio-come-coworking-messina/"
@@ -55,7 +55,7 @@ export default function Footer() {
               target="_blank"
               rel="noreferrer"
             >
-              <img src="/assets/icon-social-3.svg" alt="" width={15} height={15} />
+              <img src="/assets/icon-social-3.svg" alt="" width={20} height={20} />
             </a>
           </div>
         </motion.div>

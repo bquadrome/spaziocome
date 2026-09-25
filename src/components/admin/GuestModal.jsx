@@ -4,9 +4,11 @@ import {
   addGuest,
   datesBetween,
   patchGuest,
+  removeGuestOccurrence,
   setGuestStatus,
   splitName,
   todayISO,
+  formatISO,
 } from '../../store/bookingStore.js'
 
 export function emptyGuestForm(date = todayISO()) {
@@ -171,20 +173,44 @@ export default function GuestModal({ guest = null, date, onClose }) {
             Chiudi
           </button>
           {!isNew ? (
-            <button
-              className="btn-danger"
-              type="button"
-              onClick={async () => {
-                const result = await setGuestStatus(guest.id, guest.status === 'active' ? 'cancelled' : 'active')
-                if (result && result.ok === false) {
-                  setError(result.error)
-                  return
-                }
-                onClose?.()
-              }}
-            >
-              {guest.status === 'active' ? 'Annulla attività' : 'Riattiva attività'}
-            </button>
+            <>
+              <button
+                className="btn-danger"
+                type="button"
+                onClick={async () => {
+                  const result = await setGuestStatus(guest.id, guest.status === 'active' ? 'cancelled' : 'active')
+                  if (result && result.ok === false) {
+                    setError(result.error)
+                    return
+                  }
+                  onClose?.()
+                }}
+              >
+                {guest.status === 'active' ? 'Annulla attività' : 'Riattiva attività'}
+              </button>
+              <button
+                className="btn-danger is-fill"
+                type="button"
+                onClick={async () => {
+                  const manyDays = (guest.dates ?? []).length > 1
+                  const label = date ? formatISO(date) : ''
+                  const ok = window.confirm(
+                    manyDays && date
+                      ? `Eliminare solo l’ospite del ${label}? Le altre date restano.`
+                      : 'Eliminare definitivamente questo ospite? L’azione non si può annullare.',
+                  )
+                  if (!ok) return
+                  const result = await removeGuestOccurrence(guest.id, date)
+                  if (result && result.ok === false) {
+                    setError(result.error)
+                    return
+                  }
+                  onClose?.()
+                }}
+              >
+                Elimina
+              </button>
+            </>
           ) : null}
         </div>
       </form>
