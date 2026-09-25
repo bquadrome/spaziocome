@@ -1,0 +1,22 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Dependencies
+node_modules
+
+# Build
+dist
+dist-ssr
+*.local
+.env
+.env.*
+!.env.example
+supabase/.env
+supabase/.temp
+
+# Editor
+.vscode
+.idea
+.DS_Store
