@@ -1,26 +1,11 @@
 import { motion } from 'framer-motion'
 import DecoArrow from './DecoArrow.jsx'
 import { fadeUp, stagger, viewport } from '../motion.js'
-
-const CARDS = [
-  {
-    icon: '/assets/icon-freelance.svg',
-    title: 'Professionisti e Freelance',
-    text: 'Molto più di una scrivania. Trova la concentrazione di cui hai bisogno e connettiti con una community di talenti pronti a ispirarti e fare rete ogni giorno.',
-  },
-  {
-    icon: '/assets/icon-aziende.svg',
-    title: 'Aziende e Startup',
-    text: "L'ecosistema ideale per accelerare il tuo business. Spazi flessibili, tecnologie all'avanguardia e le connessioni giuste per far crescere il tuo team.",
-  },
-  {
-    icon: '/assets/icon-community.svg',
-    title: 'Associazioni e Community',
-    text: 'Condividi valori, crea opportunità. Uno spazio accogliente e attrezzato con tutti gli strumenti necessari per dare voce e impatto ai tuoi progetti culturali.',
-  },
-]
+import { useSiteStore } from '../store/siteStore.js'
 
 export default function Audience() {
+  const { audience } = useSiteStore()
+
   return (
     <section className="audience" id="per-te">
       <div className="container">
@@ -33,16 +18,13 @@ export default function Audience() {
         >
           <motion.p className="section-label" variants={fadeUp}>
             <img src="/assets/icon-label.svg" alt="" width={24} height={24} />
-            <span>PER CHI È PENSATO</span>
+            <span>{audience.label}</span>
           </motion.p>
           <motion.h2 variants={fadeUp}>
-            Co.Me.
-            <span className="rest"> è per te.</span>
+            {audience.titleLead}
+            <span className="rest">{audience.titleRest}</span>
           </motion.h2>
-          <motion.p variants={fadeUp}>
-            Se stai cercando la concentrazione per i tuoi progetti o l’energia di un team in crescita,
-            qui trovi il tuo habitat ideale.
-          </motion.p>
+          <motion.p variants={fadeUp}>{audience.text}</motion.p>
         </motion.div>
         <motion.div
           className="audience-grid"
@@ -51,7 +33,7 @@ export default function Audience() {
           viewport={{ once: true, amount: 0.2 }}
           variants={stagger}
         >
-          {CARDS.map((card) => (
+          {audience.cards.map((card) => (
             <motion.article className="aud-card-shell" key={card.title} variants={fadeUp}>
               <div className="aud-card">
                 <img src={card.icon} alt="" width={40} height={40} />

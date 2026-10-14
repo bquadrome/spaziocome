@@ -1,12 +1,17 @@
 import { motion } from 'framer-motion'
 import { easeOut } from '../motion.js'
+import TitleLines from './TitleLines.jsx'
+import { extLinkProps, useSiteStore } from '../store/siteStore.js'
 
 export default function Hero() {
+  const { hero } = useSiteStore()
+  const cta = extLinkProps(hero.ctaHref)
+
   return (
     <section className="hero" id="top">
       <motion.img
         className="hero-bg"
-        src="/assets/hero.png"
+        src={hero.image}
         alt=""
         fetchPriority="high"
         width={1425}
@@ -41,9 +46,7 @@ export default function Hero() {
             show: { opacity: 1, y: 0, transition: { duration: 0.75, ease: easeOut } },
           }}
         >
-          Primo Hub di Innovazione
-          <br />
-          a Messina
+          <TitleLines text={hero.title} />
         </motion.h1>
         <motion.p
           variants={{
@@ -51,7 +54,7 @@ export default function Hero() {
             show: { opacity: 1, y: 0, transition: { duration: 0.7, ease: easeOut } },
           }}
         >
-          Un nuovo spazio dove idee, talenti e connessioni prendono forma… Come sentirsi a casa.
+          {hero.text}
         </motion.p>
         <motion.div
           variants={{
@@ -59,9 +62,9 @@ export default function Hero() {
             show: { opacity: 1, y: 0, transition: { duration: 0.65, ease: easeOut } },
           }}
         >
-          <a className="btn btn-cyan" href="#progetto" data-scroll-duration="0.8">
+          <a className="btn btn-cyan" {...cta} data-scroll-duration="0.8">
             <img src="/assets/icon-cta.svg" alt="" width={18} height={18} />
-            Scopri il progetto
+            {hero.ctaLabel}
           </a>
         </motion.div>
       </motion.div>

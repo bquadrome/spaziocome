@@ -20,3 +20,6 @@ supabase/.temp
 .vscode
 .idea
 .DS_Store
+
+# Backup locali di Claude
+.claude/backups/

@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Time24 from './Time24.jsx'
 import GuestModal from './GuestModal.jsx'
 import {
-  EVENT_COLORS,
+  bookingPhase,
+  typeColor,
   WEEKDAYS,
   datesBetween,
   isSlotFull,
@@ -12,6 +13,11 @@ import {
   addBooking,
   setBookingStatus,
   removeBookingOccurrence,
+  activeCustomFields,
+  customValue,
+  fetchReceptionKey,
+  setCustomValue,
+  receptionUrl,
   formatISO,
   splitName,
   todayISO,
@@ -20,11 +26,207 @@ import {
 import { SERVICES } from '../../data/services.js'
 import { CalDirIcon } from './CalendarMonth.jsx'
 
+const PUBLIC_CALENDAR =
+  'https://calendar.google.com/calendar/u/5/embed?src=9fa4d3194119c0abd601c8428459182fd4f632ed065fdf1c3f754bb1a2370aef@group.calendar.google.com&ctz=Europe/Rome&mode=AGENDA&showTitle=0&showNav=0&showPrint=0&showTabs=0&showCalendars=0&showTz=0&csspa=1'
+
+const FILTER_IDS = new Set(['all', 'ospite', ...SERVICES.map((item) => item.id)])
+
+function filterFromUrl() {
+  const tipo = new URLSearchParams(window.location.search).get('tipo')
+  return FILTER_IDS.has(tipo) ? tipo : 'all'
+}
+
+function writeFilterUrl(tipo) {
+  const url = new URL(window.location.href)
+  if (!tipo || tipo === 'all') url.searchParams.delete('tipo')
+  else url.searchParams.set('tipo', tipo)
+  window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`)
+}
+
 const SHORT = {
   coworking: 'Coworking',
   meeting: 'Meeting',
   expo: 'Expo',
   eu: 'EU Lab',
+}
+
+const MONTH_SHORT = ['gen', 'feb', 'mar', 'apr', 'mag', 'giu', 'lug', 'ago', 'set', 'ott', 'nov', 'dic']
+const MONTH_UP = ['GEN', 'FEB', 'MAR', 'APR', 'MAG', 'GIU', 'LUG', 'AGO', 'SET', 'OTT', 'NOV', 'DIC']
+export function TypeMenu({ value, options, onChange }) {
+  const [open, setOpen] = useState(false)
+  const root = useRef(null)
+  const current = options.find((item) => item.id === value) ?? options[0]
+  const wheel = options.filter((item) => item.color).map((item) => item.color)
+  const wheelStyle = wheel.length ? { background: `conic-gradient(${wheel.join(',')})` } : undefined
+
+  useEffect(() => {
+    if (!open) return undefined
+    function onPointer(event) {
+      if (!root.current?.contains(event.target)) setOpen(false)
+    }
+    function onKey(event) {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('pointerdown', onPointer)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('pointerdown', onPointer)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  return (
+    <div className={`cal-type${open ? ' is-open' : ''}`} ref={root}>
+      <button
+        type="button"
+        className="cal-type-btn"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((prev) => !prev)}
+      >
+        {current?.color ? <i style={{ background: current.color }} /> : <i className="is-all" style={wheelStyle} />}
+        <strong>{current?.label ?? 'Tutti'}</strong>
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M7 10.2 12 15l5-4.8" />
+        </svg>
+      </button>
+      {open ? (
+        <ul className="cal-type-menu" role="listbox">
+          {options.map((item) => (
+            <li key={item.id}>
+              <button
+                type="button"
+                role="option"
+                aria-selected={item.id === value}
+                className={item.id === value ? 'is-on' : ''}
+                onClick={() => {
+                  onChange(item.id)
+                  setOpen(false)
+                }}
+              >
+                {item.color ? <i style={{ background: item.color }} /> : <i className="is-all" style={wheelStyle} />}
+                <span>{item.label}</span>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M6.5 12.5 10 16l7.5-8" />
+                </svg>
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  )
+}
+
+export function MonthMenu({ value, onChange }) {
+  const now = new Date()
+  const [open, setOpen] = useState(false)
+  const [year, setYear] = useState(() => (value ? Number(value.slice(0, 4)) : now.getFullYear()))
+  const root = useRef(null)
+  const picked = value
+    ? new Date(Number(value.slice(0, 4)), Number(value.slice(5, 7)) - 1, 1).toLocaleDateString('it-IT', {
+        month: 'long',
+        year: 'numeric',
+      })
+    : ''
+  const label = picked ? picked.charAt(0).toUpperCase() + picked.slice(1) : 'Tutti i mesi'
+
+  useEffect(() => {
+    if (!open) return undefined
+    function onPointer(event) {
+      if (!root.current?.contains(event.target)) setOpen(false)
+    }
+    function onKey(event) {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('pointerdown', onPointer)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('pointerdown', onPointer)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  return (
+    <div className={`cal-type${open ? ' is-open' : ''}`} ref={root}>
+      <button
+        type="button"
+        className="cal-type-btn"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={() => {
+          if (!open && value) setYear(Number(value.slice(0, 4)))
+          setOpen((prev) => !prev)
+        }}
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="4" y="5" width="16" height="15" rx="2" />
+          <path d="M8 3.5v3M16 3.5v3M4 10h16" />
+        </svg>
+        <strong>{label}</strong>
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M7 10.2 12 15l5-4.8" />
+        </svg>
+      </button>
+      {open ? (
+        <div className="cal-month-menu" role="dialog" aria-label="Filtra per mese">
+          <div className="cal-month-year">
+            <button type="button" onClick={() => setYear((prev) => prev - 1)} aria-label="Anno precedente">
+              ‹
+            </button>
+            <strong>{year}</strong>
+            <button type="button" onClick={() => setYear((prev) => prev + 1)} aria-label="Anno successivo">
+              ›
+            </button>
+          </div>
+          <button
+            type="button"
+            className={`cal-month-all${!value ? ' is-on' : ''}`}
+            onClick={() => {
+              onChange('')
+              setOpen(false)
+            }}
+          >
+            Tutti i mesi
+          </button>
+          <div className="cal-month-grid">
+            {MONTH_SHORT.map((name, index) => {
+              const id = `${year}-${String(index + 1).padStart(2, '0')}`
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  className={value === id ? 'is-on' : ''}
+                  onClick={() => {
+                    onChange(id)
+                    setOpen(false)
+                  }}
+                >
+                  {name}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function dateParts(iso) {
+  const [y, m, d] = String(iso).split('-').map(Number)
+  return { y, m, d }
+}
+
+function formatRange(dates) {
+  const sorted = [...dates].filter(Boolean).sort()
+  if (!sorted.length) return ''
+  const a = dateParts(sorted[0])
+  const b = dateParts(sorted[sorted.length - 1])
+  if (sorted[0] === sorted[sorted.length - 1]) return `${a.d} ${MONTH_SHORT[a.m - 1]} ${a.y}`
+  if (a.y === b.y && a.m === b.m) return `${a.d}–${b.d} ${MONTH_SHORT[a.m - 1]} ${a.y}`
+  if (a.y === b.y) return `${a.d} ${MONTH_SHORT[a.m - 1]} – ${b.d} ${MONTH_SHORT[b.m - 1]} ${a.y}`
+  return `${a.d} ${MONTH_SHORT[a.m - 1]} ${a.y} – ${b.d} ${MONTH_SHORT[b.m - 1]} ${b.y}`
 }
 
 function bookingSlots(event, booking) {
@@ -57,6 +259,7 @@ function formFromBooking(booking, events) {
     timeStart: slots[0]?.start ?? '',
     timeEnd: slots[slots.length - 1]?.end ?? '',
     extra: booking.extra ?? '',
+    custom: Array.isArray(booking.custom) ? booking.custom : [],
     notes: booking.notes ?? '',
     stationId: booking.stationId ?? '',
   }
@@ -74,6 +277,7 @@ function emptyForm(date, eventId) {
     timeStart: '',
     timeEnd: '',
     extra: '',
+    custom: [],
     notes: '',
     stationId: '',
   }
@@ -82,14 +286,27 @@ function emptyForm(date, eventId) {
 export default function AdminCalendar() {
   const now = new Date()
   const [cursor, setCursor] = useState({ y: now.getFullYear(), m: now.getMonth() })
-  const [filter, setFilter] = useState('all')
+  const [filter, setFilter] = useState(filterFromUrl)
   const [openId, setOpenId] = useState('')
   const [focusDate, setFocusDate] = useState('')
   const [focusSlotId, setFocusSlotId] = useState('')
   const [form, setForm] = useState(null)
   const [error, setError] = useState('')
   const [guestModal, setGuestModal] = useState(null)
-  const { bookings = [], events = {}, guests = [] } = useBookingStore()
+  const [copied, setCopied] = useState(false)
+  const [receptionLink, setReceptionLink] = useState('')
+  const [copiedDesk, setCopiedDesk] = useState(false)
+
+  useEffect(() => {
+    fetchReceptionKey().then((key) => {
+      setReceptionLink(receptionUrl(key))
+    })
+  }, [])
+  const [view, setView] = useState('list')
+  const [query, setQuery] = useState('')
+  const [activeOnly, setActiveOnly] = useState(true)
+  const [monthFilter, setMonthFilter] = useState('')
+  const { bookings = [], events = {}, guests = [], colors = {} } = useBookingStore()
   const today = todayISO()
 
   const visible = useMemo(() => {
@@ -128,7 +345,7 @@ export default function AdminCalendar() {
               slotId: slot.id,
               time: slot.start,
               text: `${slot.start} ${space} - ${who}`,
-              color: EVENT_COLORS[item.eventId],
+              color: typeColor(colors, item.eventId),
               off: item.status !== 'active',
             })
           }
@@ -140,7 +357,7 @@ export default function AdminCalendar() {
             slotId: '',
             time: '',
             text: `${space} - ${name}`,
-            color: EVENT_COLORS[item.eventId],
+            color: typeColor(colors, item.eventId),
             off: item.status !== 'active',
           })
         }
@@ -155,7 +372,7 @@ export default function AdminCalendar() {
         id: item.id,
         time,
         text: time ? `${time} Ospite - ${name}` : `Ospite - ${name}`,
-        color: EVENT_COLORS.ospite,
+        color: typeColor(colors, 'ospite'),
         off: item.status !== 'active',
       }
       for (const date of item.dates ?? []) push(date, chip)
@@ -164,7 +381,71 @@ export default function AdminCalendar() {
       map[date].sort((a, b) => String(a.time ?? '').localeCompare(String(b.time ?? '')))
     }
     return map
-  }, [visible, visibleGuests, events])
+  }, [visible, visibleGuests, events, colors])
+
+  const cards = useMemo(() => {
+    const needle = query.trim().toLowerCase()
+    const rows = []
+    for (const item of visible) {
+      const phase = bookingPhase(item, today)
+      if (activeOnly && phase !== 'active') continue
+      const event = events[item.eventId]
+      const dates = [...(item.dates ?? [])].filter(Boolean).sort()
+      const name = [item.firstName, item.lastName].filter(Boolean).join(' ') || 'Senza nome'
+      const slots = bookingSlots(event, item)
+      const time = slots.length ? `${slots[0].start}–${slots[slots.length - 1].end}` : ''
+      const desk = (event?.stations ?? []).find((station) => station.id === item.stationId)?.label
+      const kind = events[item.eventId]?.name ?? SHORT[item.eventId] ?? 'Prenotazione'
+      const when = [time, desk].filter(Boolean).join(' · ') || 'Orario non indicato'
+      const blob = `${name} ${kind} ${when} ${item.email ?? ''} ${item.notes ?? ''}`.toLowerCase()
+      if (needle && !blob.includes(needle)) continue
+      const focus = monthFilter ? dates.filter((date) => date.slice(0, 7) === monthFilter) : dates
+      if (!focus.length) continue
+      const hero = focus[0]
+      rows.push({
+        key: `b-${item.id}`,
+        kind: 'booking',
+        id: item.id,
+        color: typeColor(colors, item.eventId),
+        month: MONTH_UP[dateParts(hero).m - 1],
+        day: dateParts(hero).d,
+        range: formatRange(dates),
+        title: name,
+        tag: kind,
+        when,
+        phase,
+        sort: hero,
+      })
+    }
+    for (const item of visibleGuests) {
+      const phase = bookingPhase(item, today)
+      if (activeOnly && phase !== 'active') continue
+      const dates = [...(item.dates ?? [])].filter(Boolean).sort()
+      const name = [item.firstName, item.lastName].filter(Boolean).join(' ') || 'Ospite'
+      const when = [item.timeStart, item.timeEnd].filter(Boolean).join('–') || 'Orario non indicato'
+      const blob = `${name} ospite ${when} ${item.email ?? ''} ${item.notes ?? ''}`.toLowerCase()
+      if (needle && !blob.includes(needle)) continue
+      const focus = monthFilter ? dates.filter((date) => date.slice(0, 7) === monthFilter) : dates
+      if (!focus.length) continue
+      const hero = focus[0]
+      rows.push({
+        key: `g-${item.id}`,
+        kind: 'guest',
+        id: item.id,
+        color: typeColor(colors, 'ospite'),
+        month: MONTH_UP[dateParts(hero).m - 1],
+        day: dateParts(hero).d,
+        range: formatRange(dates),
+        title: name,
+        tag: 'Ospite',
+        when,
+        phase,
+        sort: hero,
+      })
+    }
+    rows.sort((a, b) => a.sort.localeCompare(b.sort) || a.when.localeCompare(b.when) || a.title.localeCompare(b.title))
+    return rows
+  }, [visible, visibleGuests, events, colors, query, activeOnly, monthFilter, today])
 
   const cells = useMemo(() => monthGrid(cursor.y, cursor.m), [cursor])
   const title = new Date(cursor.y, cursor.m, 1).toLocaleDateString('it-IT', {
@@ -183,6 +464,12 @@ export default function AdminCalendar() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [openId])
+
+  function pickFilter(next) {
+    const tipo = typeof next === 'function' ? next(filter) : next
+    setFilter(tipo)
+    writeFilterUrl(tipo)
+  }
 
   function shift(delta) {
     const d = new Date(cursor.y, cursor.m + delta, 1)
@@ -204,6 +491,15 @@ export default function AdminCalendar() {
     setForm(emptyForm(date || todayISO(), eventId))
   }
 
+  // /admin/calendario?nuova=1 apre subito il form nuova prenotazione.
+  useEffect(() => {
+    const url = new URL(window.location.href)
+    if (!url.searchParams.get('nuova')) return
+    openNew()
+    url.searchParams.delete('nuova')
+    window.history.replaceState(null, '', `${url.pathname}${url.search}`)
+  }, [])
+
   function openBooking(id, date, slotId) {
     const item = bookings.find((b) => b.id === id)
     if (!item) return
@@ -224,7 +520,7 @@ export default function AdminCalendar() {
 
   function setField(key, value) {
     setForm((prev) => {
-      if (key === 'eventId') return { ...prev, eventId: value, stationId: '', extra: '' }
+      if (key === 'eventId') return { ...prev, eventId: value, stationId: '', extra: '', custom: [] }
       return { ...prev, [key]: value }
     })
     setError('')
@@ -281,6 +577,7 @@ export default function AdminCalendar() {
       email: form.email.trim(),
       phone: form.phone.trim(),
       extra: form.extra,
+      custom: (form.custom ?? []).map((item) => ({ ...item, value: String(item.value).trim() })).filter((item) => item.value),
       notes: form.notes.trim(),
     }
     const result = isNew ? await addBooking(payload) : await patchBooking(booking.id, payload)
@@ -291,30 +588,241 @@ export default function AdminCalendar() {
     closeModal()
   }
 
+  function exportCsv() {
+    const customLabels = [...new Set(bookings.flatMap((item) => (item.custom ?? []).map((entry) => entry.label)))]
+    const header = ['Nome', 'Email', 'Telefono', 'Spazio', 'Date', 'Orario', 'Postazione', 'Stato', 'Extra', ...customLabels, 'Note', 'Creata il']
+    const rows = [...bookings].sort((a, b) => {
+      const first = (item) => [...(item.dates ?? [])].filter(Boolean).sort()[0] ?? ''
+      return first(a).localeCompare(first(b)) || String(a.createdAt ?? '').localeCompare(String(b.createdAt ?? ''))
+    })
+    const lines = [
+      header,
+      ...rows.map((item) => {
+        const event = events[item.eventId]
+        const slots = bookingSlots(event, item)
+        const desk = (event?.stations ?? []).find((station) => station.id === item.stationId)?.label ?? ''
+        const created = item.createdAt ? new Date(item.createdAt).toLocaleString('it-IT') : ''
+        return [
+          [item.firstName, item.lastName].filter(Boolean).join(' '),
+          item.email ?? '',
+          item.phone ?? '',
+          event?.name ?? SHORT[item.eventId] ?? item.eventId,
+          [...(item.dates ?? [])].filter(Boolean).sort().join(', '),
+          slots.length ? `${slots[0].start}–${slots[slots.length - 1].end}` : '',
+          desk,
+          bookingPhase(item, today) === 'past' ? 'Passata' : item.status === 'active' ? 'Attiva' : 'Annullata',
+          item.extra ?? '',
+          ...customLabels.map((label) => (item.custom ?? []).find((entry) => entry.label === label)?.value ?? ''),
+          item.notes ?? '',
+          created,
+        ]
+      }),
+    ]
+    const csv = lines
+      .map((cells) => cells.map((value) => `"${String(value ?? '').replace(/"/g, '""')}"`).join(';'))
+      .join('\r\n')
+    const file = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(file)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `prenotazioni-${today}.csv`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
+  async function copyReception() {
+    try {
+      await navigator.clipboard.writeText(receptionLink)
+      setCopiedDesk(true)
+      window.setTimeout(() => setCopiedDesk(false), 1600)
+    } catch {
+      setCopiedDesk(false)
+    }
+  }
+
+  async function copyCalendar() {
+    try {
+      await navigator.clipboard.writeText(PUBLIC_CALENDAR)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1600)
+    } catch {
+      setCopied(false)
+    }
+  }
+
   return (
     <div className="month">
+      <section className="gest-head">
+        <div className="gest-head-top">
+          <div>
+            <p className="gest-kicker">Spazio COME</p>
+            <h1>Calendario</h1>
+          </div>
+          <div className="gest-head-actions">
+            <button type="button" className="gest-btn" onClick={() => openNew()}>
+              Aggiungi prenotazione
+            </button>
+            <button type="button" className="gest-btn" onClick={() => setGuestModal({ type: 'new' })}>
+              Aggiungi ospite
+            </button>
+          </div>
+        </div>
+        <div className="gest-links">
+          {receptionLink ? (
+            <>
+              <a className="gest-link-btn" href={receptionLink} target="_blank" rel="noopener noreferrer">
+                Apri reception
+              </a>
+              <button type="button" className="gest-link-btn" onClick={copyReception}>
+                {copiedDesk ? 'Link copiato' : 'Copia link reception'}
+              </button>
+            </>
+          ) : null}
+          <a className="gest-link-btn" href={PUBLIC_CALENDAR} target="_blank" rel="noopener noreferrer">
+            Apri Calendario Google
+          </a>
+          <button type="button" className="gest-link-btn" onClick={copyCalendar}>
+            {copied ? 'Link copiato' : 'Copia link Calendario Google'}
+          </button>
+        </div>
+      </section>
+
+      <div className="cal-views" role="tablist" aria-label="Visualizzazione">
+        <button type="button" role="tab" aria-selected={view === 'list'} className={view === 'list' ? 'is-on' : ''} onClick={() => setView('list')}>
+          Elenco
+        </button>
+        <button type="button" role="tab" aria-selected={view === 'month'} className={view === 'month' ? 'is-on' : ''} onClick={() => setView('month')}>
+          Calendario
+        </button>
+      </div>
+
+      {view === 'list' ? (
+        <>
+          <div className="cal-tools">
+            <TypeMenu
+              value={filter}
+              onChange={pickFilter}
+              options={[
+                { id: 'all', label: 'Tutti' },
+                ...SERVICES.map((item) => ({
+                  id: item.id,
+                  label: events[item.id]?.name ?? item.name,
+                  color: typeColor(colors, item.id),
+                })),
+                { id: 'ospite', label: 'Ospite', color: typeColor(colors, 'ospite') },
+              ]}
+            />
+            <MonthMenu value={monthFilter} onChange={setMonthFilter} />
+            <label className="cal-search">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="11" cy="11" r="6.5" />
+                <path d="M16 16.5 20 20.5" />
+              </svg>
+              <input
+                type="search"
+                value={query}
+                placeholder="Cerca nome o note"
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </label>
+            <div className="cal-tools-end">
+              <button
+                type="button"
+                className={`cal-switch${activeOnly ? ' is-on' : ''}`}
+                aria-pressed={activeOnly}
+                onClick={() => setActiveOnly((on) => !on)}
+              >
+                <i />
+                Solo attive
+              </button>
+              <button type="button" className="cal-export" onClick={exportCsv}>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 4.5v9" />
+                  <path d="m8 10 4 4 4-4" />
+                  <path d="M5.5 18.5h13" />
+                </svg>
+                Esporta CSV
+              </button>
+            </div>
+          </div>
+          {cards.length ? (
+            <div className="cal-cards">
+              {cards.map((card) => (
+                <button
+                  key={card.key}
+                  type="button"
+                  className={`cal-card${card.phase === 'cancelled' ? ' is-off' : ''}${card.phase === 'past' ? ' is-past' : ''}`}
+                  style={{ '--type': card.color }}
+                  onClick={() => {
+                    if (card.kind === 'guest') {
+                      const item = guests.find((guest) => guest.id === card.id)
+                      if (item) setGuestModal({ type: 'edit', guest: item, date: card.sort })
+                      return
+                    }
+                    openBooking(card.id, card.sort, '')
+                  }}
+                >
+                  <span className="cal-card-date">
+                    <span>{card.month}</span>
+                    <b>{card.day}</b>
+                    <small>{card.range}</small>
+                  </span>
+                  <span className="cal-card-body">
+                    <strong>{card.title}</strong>
+                    <span className="cal-card-tags">
+                      <span className="cal-card-tag">{card.tag}</span>
+                      {card.phase === 'past' ? <span className="cal-card-state">Passata</span> : null}
+                      {card.phase === 'cancelled' ? <span className="cal-card-state is-cancel">Annullata</span> : null}
+                    </span>
+                    <span className="cal-card-meta">
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M12 2.6a6.2 6.2 0 0 0-6.2 6.2c0 4.6 6.2 12.4 6.2 12.4s6.2-7.8 6.2-12.4A6.2 6.2 0 0 0 12 2.6zm0 8.4a2.2 2.2 0 1 1 2.2-2.2A2.2 2.2 0 0 1 12 11z" />
+                      </svg>
+                      {card.when}
+                    </span>
+                    <span className="cal-card-open" aria-hidden="true">
+                      <svg viewBox="0 0 24 24">
+                        <path d="M10 6H6.5A1.5 1.5 0 0 0 5 7.5v10A1.5 1.5 0 0 0 6.5 19h10a1.5 1.5 0 0 0 1.5-1.5V14" />
+                        <path d="M13 5h6v6" />
+                        <path d="M19 5 10.5 13.5" />
+                      </svg>
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="dash-empty">Nessuna prenotazione con questi filtri.</p>
+          )}
+        </>
+      ) : null}
+
+      {view === 'month' ? (
       <div className="month-legend">
         {SERVICES.map((item) => (
           <button
             key={item.id}
             type="button"
             className={filter === item.id ? 'is-on' : ''}
-            onClick={() => setFilter((prev) => (prev === item.id ? 'all' : item.id))}
+            onClick={() => pickFilter((prev) => (prev === item.id ? 'all' : item.id))}
           >
-            <i style={{ background: EVENT_COLORS[item.id] }} />
+            <i style={{ background: typeColor(colors, item.id) }} />
             {events[item.id]?.name ?? item.name}
           </button>
         ))}
         <button
           type="button"
           className={filter === 'ospite' ? 'is-on' : ''}
-          onClick={() => setFilter((prev) => (prev === 'ospite' ? 'all' : 'ospite'))}
+          onClick={() => pickFilter((prev) => (prev === 'ospite' ? 'all' : 'ospite'))}
         >
-          <i style={{ background: EVENT_COLORS.ospite }} />
+          <i style={{ background: typeColor(colors, 'ospite') }} />
           Ospite
         </button>
       </div>
+      ) : null}
 
+      {view === 'month' ? (
+      <>
       <div className="month-toolbar">
         <button type="button" className="cal-dir" onClick={() => shift(-1)} aria-label="Mese precedente">
           <CalDirIcon dir="prev" />
@@ -325,13 +833,7 @@ export default function AdminCalendar() {
         <button type="button" className="cal-dir" onClick={() => shift(1)} aria-label="Mese successivo">
           <CalDirIcon dir="next" />
         </button>
-        <strong>{title}</strong>
-        <button type="button" className="month-add" onClick={() => openNew()}>
-          Aggiungi prenotazione
-        </button>
-        <button type="button" className="month-add" onClick={() => setGuestModal({ type: 'new' })}>
-          Aggiungi ospite
-        </button>
+        <strong key={title}>{title}</strong>
       </div>
 
       <div className="month-board">
@@ -340,7 +842,7 @@ export default function AdminCalendar() {
             <span key={day.id}>{day.label}</span>
           ))}
         </div>
-        <div className="month-grid">
+        <div className="month-grid" key={`${cursor.y}-${cursor.m}`}>
           {cells.map((cell) => {
             const chips = byDay[cell.iso] ?? []
             return (
@@ -376,6 +878,8 @@ export default function AdminCalendar() {
           })}
         </div>
       </div>
+      </>
+      ) : null}
 
       {form ? (
         <div className="edit-overlay" role="presentation">
@@ -481,6 +985,32 @@ export default function AdminCalendar() {
                 </select>
               </label>
             ) : null}
+
+            {activeCustomFields(event).map((field) => {
+              const value = customValue(form.custom, field.id)
+              const change = (next) => setField('custom', setCustomValue(form.custom, field, next))
+              return (
+                <label className="admin-field" key={field.id}>
+                  <span>{field.label}</span>
+                  {field.type === 'select' ? (
+                    <select value={value} onChange={(e) => change(e.target.value)}>
+                      <option value="">Seleziona</option>
+                      {(field.options ?? []).filter(Boolean).map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      value={value}
+                      inputMode={field.type === 'number' ? 'decimal' : undefined}
+                      onChange={(e) => change(e.target.value)}
+                    />
+                  )}
+                </label>
+              )
+            })}
 
             <label className="admin-field">
               <span>Note / motivo</span>

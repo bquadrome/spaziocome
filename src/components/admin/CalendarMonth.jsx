@@ -1,4 +1,4 @@
-import { EVENT_COLORS, WEEKDAYS, monthCells } from '../../store/bookingStore.js'
+import { WEEKDAYS, monthCells, typeColor, useBookingStore } from '../../store/bookingStore.js'
 
 export function CalDirIcon({ dir }) {
   const isPrev = dir === 'prev'
@@ -28,6 +28,7 @@ export default function CalendarMonth({
   markers = {},
   mode = 'select',
 }) {
+  const { colors } = useBookingStore()
   const title = new Date(year, month, 1).toLocaleDateString('it-IT', { month: 'long', year: 'numeric' })
   const cells = monthCells(year, month)
 
@@ -37,7 +38,7 @@ export default function CalendarMonth({
         <button type="button" className="cal-dir" onClick={onPrev} aria-label="Mese precedente">
           <CalDirIcon dir="prev" />
         </button>
-        <strong>{title}</strong>
+        <strong key={title}>{title}</strong>
         <button type="button" className="cal-dir" onClick={onNext} aria-label="Mese successivo">
           <CalDirIcon dir="next" />
         </button>
@@ -48,6 +49,8 @@ export default function CalendarMonth({
             {day.label}
           </span>
         ))}
+      </div>
+      <div className="cal-grid" key={`${year}-${month}`}>
         {cells.map((iso, i) => {
           if (!iso) return <span className="cal-cell is-empty" key={`e-${i}`} />
           const isSel = selected.includes(iso)
@@ -69,7 +72,7 @@ export default function CalendarMonth({
                     <b
                       key={dot.id}
                       style={{
-                        background: EVENT_COLORS[dot.eventId] ?? '#002ec1',
+                        background: typeColor(colors, dot.eventId),
                         opacity: dot.status === 'active' ? 1 : 0.35,
                       }}
                     />

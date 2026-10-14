@@ -1,13 +1,61 @@
 import { useState } from 'react'
 import CalendarMonth from './CalendarMonth.jsx'
 import Time24 from './Time24.jsx'
-import { WEEKDAYS, makeStations, patchEvent, uid, useBookingStore } from '../../store/bookingStore.js'
+import CoworkingMap, { COWORKING_ID, COWORKING_SEATS, usesCoworkingMap } from '../CoworkingMap.jsx'
+import {
+  CUSTOM_TYPES,
+  WEEKDAYS,
+  makeStations,
+  patchEvent,
+  typeColor,
+  uid,
+  useBookingStore,
+} from '../../store/bookingStore.js'
+
+function Switch({ checked, onChange, children, disabled }) {
+  return (
+    <button
+      type="button"
+      className={`ev-switch${checked ? ' is-on' : ''}`}
+      aria-pressed={checked}
+      disabled={disabled}
+      onClick={() => {
+        if (!disabled) onChange(!checked)
+      }}
+    >
+      <i />
+      {children}
+    </button>
+  )
+}
+
+function FieldToggles({ label, enabled, required, onEnabled, onRequired }) {
+  return (
+    <div className="ev-field-row">
+      <strong>{label}</strong>
+      <div className="ev-field-ops">
+        <button type="button" className={`ev-chip${enabled ? ' is-on' : ''}`} onClick={() => onEnabled(!enabled)}>
+          visibile
+        </button>
+        <button
+          type="button"
+          className={`ev-chip${required ? ' is-on' : ''}`}
+          disabled={!enabled}
+          onClick={() => enabled && onRequired(!required)}
+        >
+          obbligatorio
+        </button>
+      </div>
+    </div>
+  )
+}
 
 export default function AdminEvent({ eventId }) {
-  const { events } = useBookingStore()
+  const { events, colors = {} } = useBookingStore()
   const event = events[eventId]
   const now = new Date()
   const [cursor, setCursor] = useState({ y: now.getFullYear(), m: now.getMonth() })
+  const [pick, setPick] = useState('')
 
   if (!event) return <p className="admin-empty">Evento non trovato.</p>
 
@@ -73,18 +121,72 @@ export default function AdminEvent({ eventId }) {
     set({ emails: { ...emails, [kind]: { ...(emails[kind] ?? {}), ...patch } } })
   }
 
+  const slots = Array.isArray(event.slots) ? event.slots : []
+  const stations = event.stations ?? []
+  const isCoworking = eventId === COWORKING_ID
+  const mapReady = usesCoworkingMap(eventId, stations)
+
+  function pickSeat(id) {
+    setPick(id)
+    const input = document.getElementById(`station-${id}`)
+    input?.focus({ preventScroll: true })
+    input?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  }
+  const options = event.extraMenu?.options ?? []
+  const customFields = Array.isArray(event.customFields) ? event.customFields : []
+
+  function setCustom(id, patch) {
+    set({ customFields: customFields.map((item) => (item.id === id ? { ...item, ...patch } : item)) })
+  }
+
+  function addCustom() {
+    set({
+      customFields: [
+        ...customFields,
+        { id: uid(), label: 'Nuovo campo', type: 'text', enabled: true, required: false, options: [] },
+      ],
+    })
+  }
+
+  function removeCustom(id) {
+    set({ customFields: customFields.filter((item) => item.id !== id) })
+  }
+
+  function moveCustom(i, delta) {
+    const next = [...customFields]
+    const j = i + delta
+    if (j < 0 || j >= next.length) return
+    ;[next[i], next[j]] = [next[j], next[i]]
+    set({ customFields: next })
+  }
+
   return (
     <div className="admin-event">
+      <header className="ev-head">
+        <span className="ev-dot" style={{ background: typeColor(colors, eventId) }} />
+        <div>
+          <p className="gest-kicker">Impostazioni spazio</p>
+          <h1>{event.name || 'Evento'}</h1>
+        </div>
+      </header>
+
       <section className="admin-block">
         <h2>Testi e visibilità</h2>
-        <label className="admin-check">
-          <input
-            type="checkbox"
-            checked={event.enabled}
-            onChange={(e) => set({ enabled: e.target.checked })}
-          />
-          Evento prenotabile sul sito
-        </label>
+        <Switch checked={!!event.enabled} onChange={(on) => set({ enabled: on })}>
+          Prenotabile sul sito
+        </Switch>
+        <Switch checked={!!event.hasQr} onChange={(on) => set({ hasQr: on })}>
+          Pass QR personale per la reception
+        </Switch>
+        <Switch checked={!!event.requestMode} onChange={(on) => set({ requestMode: on })}>
+          Su richiesta con preventivo
+        </Switch>
+        {event.requestMode ? (
+          <p className="admin-hint">
+            Il sito raccoglie richieste invece di prenotazioni: le gestisci da{' '}
+            <a href="/admin/richieste">Richieste</a> e blocchi tu le date dopo il pagamento.
+          </p>
+        ) : null}
         <label className="admin-field">
           <span>Nome</span>
           <input value={event.name} onChange={(e) => set({ name: e.target.value })} />
@@ -97,50 +199,49 @@ export default function AdminEvent({ eventId }) {
 
       <section className="admin-block">
         <h2>Turni orari</h2>
-        <p className="admin-hint">Ogni riga è uno slot. Es. 10:00–12:00 e 15:00–18:00, oppure ore spezzate.</p>
+        <p className="admin-hint">Ogni riga è uno slot. Es. 10:00–12:00 e 15:00–18:00.</p>
         <div className="admin-slots">
-          {(Array.isArray(event.slots) ? event.slots : []).map((slot, i) => (
+          {slots.map((slot, i) => (
             <div className="admin-slot" key={slot.id}>
               <span>{String(i + 1).padStart(2, '0')}</span>
               <Time24 value={slot.start} onChange={(v) => updateSlot(slot.id, 'start', v)} />
-              <span>–</span>
+              <span className="ev-dash">–</span>
               <Time24 value={slot.end} onChange={(v) => updateSlot(slot.id, 'end', v)} />
-              <button type="button" onClick={() => removeSlot(slot.id)} aria-label="Elimina slot">
+              <button type="button" className="ev-del" onClick={() => removeSlot(slot.id)} aria-label="Elimina slot">
                 ×
               </button>
             </div>
           ))}
         </div>
-        <button type="button" className="btn" onClick={addSlot}>
+        <button type="button" className="gest-btn" onClick={addSlot}>
           Aggiungi slot
         </button>
       </section>
 
       <section className="admin-block">
         <h2>Postazioni e disponibilità</h2>
-        <label className="admin-check">
-          <input
-            type="checkbox"
-            checked={!!event.hasStations}
-            onChange={(e) => {
-              const on = e.target.checked
-              const maxCapacity = Math.max(1, event.maxCapacity || 1)
-              set({
-                hasStations: on,
-                maxCapacity,
-                stations: on ? makeStations(maxCapacity, event.stations) : event.stations,
-              })
-            }}
-          />
+        <Switch
+          checked={!!event.hasStations}
+          disabled={isCoworking}
+          onChange={(on) => {
+            const maxCapacity = Math.max(1, event.maxCapacity || 1)
+            set({
+              hasStations: on,
+              maxCapacity,
+              stations: on ? makeStations(maxCapacity, event.stations) : event.stations,
+            })
+          }}
+        >
           Usa postazioni
-        </label>
+        </Switch>
         <label className="admin-field">
           <span>Disponibilità massima{event.hasStations ? ' (n. postazioni)' : ' (prenotazioni per slot)'}</span>
           <input
             type="number"
             min={1}
             max={99}
-            value={event.maxCapacity ?? 1}
+            value={isCoworking ? COWORKING_SEATS : event.maxCapacity ?? 1}
+            disabled={isCoworking}
             onChange={(e) => {
               const maxCapacity = Math.max(1, Math.min(99, Number(e.target.value) || 1))
               set({
@@ -150,24 +251,63 @@ export default function AdminEvent({ eventId }) {
             }}
           />
         </label>
+        {isCoworking ? (
+          <p className="admin-hint">
+            Il Coworking usa la piantina della sala: {COWORKING_SEATS} postazioni fisse, il numero sulla mappa è
+            l’ordine della lista.
+          </p>
+        ) : null}
+        {isCoworking && !mapReady ? (
+          <div className="ev-warn">
+            <p>
+              Le postazioni salvate sono {stations.length}, la piantina ne richiede {COWORKING_SEATS}. Finché non
+              coincidono il sito mostra la lista semplice al posto della mappa.
+            </p>
+            <button
+              type="button"
+              className="gest-btn"
+              onClick={() =>
+                set({
+                  hasStations: true,
+                  maxCapacity: COWORKING_SEATS,
+                  stations: makeStations(COWORKING_SEATS, event.stations),
+                })
+              }
+            >
+              Allinea a {COWORKING_SEATS} postazioni
+            </button>
+          </div>
+        ) : null}
         {event.hasStations ? (
-          <div className="admin-stations">
-            <p className="admin-hint">Ogni postazione occupata su giorno + orario resta bloccata.</p>
-            {(event.stations ?? []).map((station, i) => (
-              <div className="admin-option" key={station.id}>
-                <input
-                  value={station.label}
-                  onChange={(e) =>
-                    set({
-                      stations: event.stations.map((item) =>
-                        item.id === station.id ? { ...item, label: e.target.value } : item,
-                      ),
-                    })
-                  }
-                  aria-label={`Postazione ${i + 1}`}
-                />
-              </div>
-            ))}
+          <div className={`admin-stations${mapReady ? ' has-map' : ''}`}>
+            <p className="admin-hint">
+              {mapReady
+                ? 'Clicca un posto sulla piantina per modificarne il nome. Ogni postazione occupata su giorno + orario resta bloccata.'
+                : 'Ogni postazione occupata su giorno + orario resta bloccata.'}
+            </p>
+            {mapReady ? (
+              <CoworkingMap stations={stations} value={pick} onChange={pickSeat} preview />
+            ) : null}
+            <div className="admin-station-list">
+              {stations.map((station, i) => (
+                <div className={`admin-option${pick === station.id ? ' is-picked' : ''}`} key={station.id}>
+                  <span className="ev-num">{String(i + 1).padStart(2, '0')}</span>
+                  <input
+                    id={`station-${station.id}`}
+                    value={station.label}
+                    onFocus={() => setPick(station.id)}
+                    onChange={(e) =>
+                      set({
+                        stations: event.stations.map((item) =>
+                          item.id === station.id ? { ...item, label: e.target.value } : item,
+                        ),
+                      })
+                    }
+                    aria-label={`Postazione ${i + 1}`}
+                  />
+                </div>
+              ))}
+            </div>
           </div>
         ) : (
           <p className="admin-hint">Senza postazioni: lo stesso slot accetta fino a {event.maxCapacity || 1} prenotazioni.</p>
@@ -177,27 +317,28 @@ export default function AdminEvent({ eventId }) {
       <section className="admin-block">
         <h2>Giorni prenotabili</h2>
         <div className="admin-days">
-          {WEEKDAYS.map((day) => (
-            <label key={day.id}>
-              <input
-                type="checkbox"
-                checked={Array.isArray(event.weekdays) ? event.weekdays.includes(day.id) : false}
-                onChange={() => toggleWeek(day.id)}
-              />
-              {day.label}
-            </label>
-          ))}
+          {WEEKDAYS.map((day) => {
+            const on = Array.isArray(event.weekdays) ? event.weekdays.includes(day.id) : false
+            return (
+              <button
+                key={day.id}
+                type="button"
+                className={`ev-chip${on ? ' is-on' : ''}`}
+                onClick={() => toggleWeek(day.id)}
+              >
+                {day.label}
+              </button>
+            )
+          })}
         </div>
         <div className="admin-toggles">
-          <label className="admin-check">
-            <input
-              type="checkbox"
-              checked={event.allowMultiDay}
-              onChange={(e) => set({ allowMultiDay: e.target.checked, maxDays: e.target.checked ? event.maxDays : 1 })}
-            />
+          <Switch
+            checked={!!event.allowMultiDay}
+            onChange={(on) => set({ allowMultiDay: on, maxDays: on ? event.maxDays : 1 })}
+          >
             Selezione più giorni
-          </label>
-          <label className="admin-field">
+          </Switch>
+          <label className="admin-field ev-max">
             <span>Max giorni</span>
             <input
               type="number"
@@ -208,17 +349,13 @@ export default function AdminEvent({ eventId }) {
               onChange={(e) => set({ maxDays: Number(e.target.value) || 1 })}
             />
           </label>
-          <label className="admin-check">
-            <input
-              type="checkbox"
-              checked={event.allowMultiSlot}
-              onChange={(e) =>
-                set({ allowMultiSlot: e.target.checked, maxSlots: e.target.checked ? event.maxSlots : 1 })
-              }
-            />
+          <Switch
+            checked={!!event.allowMultiSlot}
+            onChange={(on) => set({ allowMultiSlot: on, maxSlots: on ? event.maxSlots : 1 })}
+          >
             Selezione più slot orari
-          </label>
-          <label className="admin-field">
+          </Switch>
+          <label className="admin-field ev-max">
             <span>Max slot</span>
             <input
               type="number"
@@ -253,54 +390,20 @@ export default function AdminEvent({ eventId }) {
           ['lastName', 'Cognome'],
           ['email', 'Email'],
           ['phone', 'Telefono'],
+          ['notes', 'Note'],
         ].map(([key, label]) => (
-          <div className="admin-field-row" key={key}>
-            <strong>{label}</strong>
-            <label>
-              <input
-                type="checkbox"
-                checked={event.fields?.[key]?.enabled ?? false}
-                onChange={(e) => setField(key, { enabled: e.target.checked })}
-              />
-              visibile
-            </label>
-            <label>
-              <input
-                type="checkbox"
-                checked={event.fields?.[key]?.required ?? false}
-                disabled={!event.fields?.[key]?.enabled}
-                onChange={(e) => setField(key, { required: e.target.checked })}
-              />
-              obbligatorio
-            </label>
-          </div>
+          <FieldToggles
+            key={key}
+            label={label}
+            enabled={event.fields?.[key]?.enabled ?? false}
+            required={event.fields?.[key]?.required ?? false}
+            onEnabled={(on) => setField(key, { enabled: on })}
+            onRequired={(on) => setField(key, { required: on })}
+          />
         ))}
-        <div className="admin-field-row">
-          <strong>Note</strong>
-          <label>
-            <input
-              type="checkbox"
-              checked={event.fields?.notes?.enabled ?? false}
-              onChange={(e) => setField('notes', { enabled: e.target.checked })}
-            />
-            visibile
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={event.fields?.notes?.required ?? false}
-              disabled={!event.fields?.notes?.enabled}
-              onChange={(e) => setField('notes', { required: e.target.checked })}
-            />
-            obbligatorio
-          </label>
-        </div>
         <label className="admin-field">
           <span>Etichetta note</span>
-          <input
-            value={event.fields?.notes?.label ?? ''}
-            onChange={(e) => setField('notes', { label: e.target.value })}
-          />
+          <input value={event.fields?.notes?.label ?? ''} onChange={(e) => setField('notes', { label: e.target.value })} />
         </label>
         <label className="admin-field">
           <span>Testo nel campo note</span>
@@ -312,51 +415,125 @@ export default function AdminEvent({ eventId }) {
       </section>
 
       <section className="admin-block">
+        <h2>Campi personalizzati</h2>
+        <p className="admin-hint">
+          Domande in più nel form di prenotazione (es. età, matricola, corso di studi). Compaiono nella mail staff,
+          nella scheda prenotazione e nell’export CSV.
+        </p>
+        {customFields.map((field, i) => (
+          <div className="ev-custom" key={field.id}>
+            <div className="ev-custom-head">
+              <input
+                value={field.label}
+                placeholder="Nome del campo"
+                onChange={(e) => setCustom(field.id, { label: e.target.value })}
+                aria-label={`Nome campo ${i + 1}`}
+              />
+              <select value={field.type} onChange={(e) => setCustom(field.id, { type: e.target.value })} aria-label="Tipo">
+                {CUSTOM_TYPES.map((type) => (
+                  <option key={type.id} value={type.id}>
+                    {type.label}
+                  </option>
+                ))}
+              </select>
+              <button type="button" className="ev-del" onClick={() => moveCustom(i, -1)} disabled={i === 0} aria-label="Sposta su">
+                ↑
+              </button>
+              <button
+                type="button"
+                className="ev-del"
+                onClick={() => moveCustom(i, 1)}
+                disabled={i === customFields.length - 1}
+                aria-label="Sposta giù"
+              >
+                ↓
+              </button>
+              <button type="button" className="ev-del" onClick={() => removeCustom(field.id)} aria-label="Elimina campo">
+                ×
+              </button>
+            </div>
+            <div className="ev-field-ops">
+              <button
+                type="button"
+                className={`ev-chip${field.enabled !== false ? ' is-on' : ''}`}
+                onClick={() => setCustom(field.id, { enabled: field.enabled === false })}
+              >
+                visibile
+              </button>
+              <button
+                type="button"
+                className={`ev-chip${field.required ? ' is-on' : ''}`}
+                onClick={() => setCustom(field.id, { required: !field.required })}
+              >
+                obbligatorio
+              </button>
+            </div>
+            {field.type === 'select' ? (
+              <label className="admin-field">
+                <span>Opzioni (una per riga)</span>
+                <textarea
+                  rows={3}
+                  value={(field.options ?? []).join('\n')}
+                  onChange={(e) => setCustom(field.id, { options: e.target.value.split('\n') })}
+                  onBlur={(e) =>
+                    setCustom(field.id, {
+                      options: e.target.value
+                        .split('\n')
+                        .map((item) => item.trim())
+                        .filter(Boolean),
+                    })
+                  }
+                />
+              </label>
+            ) : null}
+          </div>
+        ))}
+        <button type="button" className="gest-btn" onClick={addCustom}>
+          Aggiungi campo
+        </button>
+      </section>
+
+      <section className="admin-block">
         <h2>Menu a tendina extra</h2>
-        <label className="admin-check">
-          <input
-            type="checkbox"
-            checked={!!event.extraMenu?.enabled}
-            onChange={(e) => setMenu({ enabled: e.target.checked })}
-          />
-          Mostra nel form
-        </label>
-        <label className="admin-check">
-          <input
-            type="checkbox"
+        <div className="ev-switch-row">
+          <Switch checked={!!event.extraMenu?.enabled} onChange={(on) => setMenu({ enabled: on })}>
+            Mostra nel form
+          </Switch>
+          <Switch
             checked={!!event.extraMenu?.required}
             disabled={!event.extraMenu?.enabled}
-            onChange={(e) => setMenu({ required: e.target.checked })}
-          />
-          Obbligatorio
-        </label>
+            onChange={(on) => setMenu({ required: on })}
+          >
+            Obbligatorio
+          </Switch>
+        </div>
         <label className="admin-field">
           <span>Nome menu</span>
           <input value={event.extraMenu?.label ?? ''} onChange={(e) => setMenu({ label: e.target.value })} />
         </label>
-        {(event.extraMenu?.options ?? []).map((opt, i) => (
+        {options.map((opt, i) => (
           <div className="admin-option" key={`opt-${i}`}>
             <input value={opt} onChange={(e) => setOption(i, e.target.value)} />
             <button
               type="button"
-              onClick={() => setMenu({ options: (event.extraMenu?.options ?? []).filter((_, idx) => idx !== i) })}
+              className="ev-del"
+              onClick={() => setMenu({ options: options.filter((_, idx) => idx !== i) })}
+              aria-label="Elimina voce"
             >
               ×
             </button>
           </div>
         ))}
-        <button
-          type="button"
-          className="btn"
-          onClick={() => setMenu({ options: [...(event.extraMenu?.options ?? []), 'Nuova voce'] })}
-        >
+        <button type="button" className="gest-btn" onClick={() => setMenu({ options: [...options, 'Nuova voce'] })}>
           Aggiungi voce
         </button>
       </section>
 
       <section className="admin-block">
         <h2>Mail conferma</h2>
-        <p className="admin-hint">Segnaposto: {'{{nome}}'} {'{{spazio}}'} {'{{date}}'} {'{{slot}}'}</p>
+        <p className="admin-hint">
+          Segnaposto: {'{{nome}}'} {'{{spazio}}'} {'{{date}}'} {'{{slot}}'}
+        </p>
         <label className="admin-field">
           <span>Oggetto</span>
           <input

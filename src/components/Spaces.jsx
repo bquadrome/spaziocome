@@ -3,62 +3,19 @@ import { motion } from 'framer-motion'
 import SpaceTagIcon from './SpaceTagIcon.jsx'
 import { fadeUp, stagger, viewport } from '../motion.js'
 import { useBookingStore } from '../store/bookingStore.js'
-
-const SPACES = [
-  {
-    id: 'coworking',
-    name: 'Coworking e Studio',
-    text: 'Postazioni dedicate a chi vuole lavorare, studiare, seguire lezioni online, sviluppare un progetto o concentrarsi sulle proprie attività in un ambiente accogliente, luminoso e connesso.',
-    image: '/assets/area-coworking.png',
-    features: [
-      { icon: 'starlink', title: 'Connessione', subtitle: 'ultra veloce' },
-      { icon: 'desk', title: 'Postazioni', subtitle: 'ergonomiche' },
-      { icon: 'people', title: 'Community', subtitle: 'e networking' },
-    ],
-  },
-  {
-    id: 'meeting',
-    name: 'Meeting Room',
-    text: 'Sala attrezzata e versatile per riunioni, workshop, corsi di formazione, presentazioni e videoconferenze. Spazio professionale, moderno e dinamico.',
-    image: '/assets/area-meeting.png',
-    features: [
-      { icon: 'av', title: 'Dotazioni audio-video', subtitle: 'per conferenze' },
-      { icon: 'calendar', title: 'Spazio dinamico', subtitle: 'e multifunzionale' },
-      { icon: 'access', title: 'Accesso smart', subtitle: 'e prenotazione rapida' },
-    ],
-  },
-  {
-    id: 'expo',
-    name: 'Expo Space',
-    text: 'Area espositiva modulabile dedicata a mostre, installazioni, presentazioni, pop-up, attività culturali, promozionali e valorizzazione di progetti, idee e brand.',
-    image: '/assets/area-expo.png',
-    features: [
-      { icon: 'layout', title: 'Allestimento', subtitle: 'modulabile' },
-      { icon: 'audience', title: 'Eventi', subtitle: 'e inaugurazioni' },
-      { icon: 'visibility', title: 'Visibilità', subtitle: 'e networking' },
-    ],
-  },
-  {
-    id: 'eu',
-    name: 'EU Project Lab',
-    text: 'Il servizio di Spazio COME dedicato alle opportunità e alla progettazione europea. Offre consulenza specialistica a giovani, associazioni, enti e imprese nella ricerca di bandi e finanziamenti, nella progettazione e nella comunicazione e valorizzazione dei progetti.',
-    image: '/assets/area-eu.png',
-    features: [
-      { icon: 'grant', title: 'Consulenza', subtitle: 'bandi UE' },
-      { icon: 'codesign', title: 'Co-progettazione', subtitle: 'europea' },
-      { icon: 'training', title: 'Formazione', subtitle: 'e networking' },
-    ],
-  },
-]
+import { useSiteStore } from '../store/siteStore.js'
 
 export default function Spaces({ onBook }) {
+  const { spaces } = useSiteStore()
+  const items = spaces.items
   const [active, setActive] = useState(0)
   const tabsRef = useRef([])
   const panelRef = useRef(null)
   const innerRef = useRef(null)
-  const space = SPACES[active]
+  const index = items.length ? Math.min(active, items.length - 1) : 0
+  const space = items[index]
   const { events } = useBookingStore()
-  const bookable = events[space.id]?.enabled !== false
+  const bookable = space ? events[space.id]?.enabled !== false : false
 
   useLayoutEffect(() => {
     const panel = panelRef.current
@@ -100,17 +57,17 @@ export default function Spaces({ onBook }) {
       cancelAnimationFrame(frame)
       observer.disconnect()
     }
-  }, [active])
+  }, [index, space?.text, spaces.ctaLabel])
 
-  function select(index) {
-    setActive(index)
+  function select(next) {
+    setActive(next)
   }
 
-  function onTabKeyDown(event, index) {
-    const last = SPACES.length - 1
+  function onTabKeyDown(event, i) {
+    const last = items.length - 1
     let next = null
-    if (event.key === 'ArrowDown' || event.key === 'ArrowRight') next = index === last ? 0 : index + 1
-    else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') next = index === 0 ? last : index - 1
+    if (event.key === 'ArrowDown' || event.key === 'ArrowRight') next = i === last ? 0 : i + 1
+    else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') next = i === 0 ? last : i - 1
     else if (event.key === 'Home') next = 0
     else if (event.key === 'End') next = last
     if (next === null) return
@@ -118,6 +75,8 @@ export default function Spaces({ onBook }) {
     select(next)
     tabsRef.current[next]?.focus()
   }
+
+  if (!space) return null
 
   return (
     <section className="spaces" id="spazi">
@@ -132,17 +91,14 @@ export default function Spaces({ onBook }) {
           >
             <motion.p className="section-label" variants={fadeUp}>
               <img src="/assets/icon-label.svg" alt="" width={24} height={24} />
-              <span>GLI SPAZI</span>
+              <span>{spaces.label}</span>
             </motion.p>
             <motion.h2 variants={fadeUp}>
-              Prenota il tuo
+              {spaces.title}
               <br />
-              <span className="rest">spazio.</span>
+              <span className="rest">{spaces.titleRest}</span>
             </motion.h2>
-            <motion.p variants={fadeUp}>
-              Quattro ambienti da vivere nel cuore di Messina. Scegli quello che fa per te e
-              prenota.
-            </motion.p>
+            <motion.p variants={fadeUp}>{spaces.text}</motion.p>
           </motion.div>
 
           <motion.div
@@ -153,8 +109,8 @@ export default function Spaces({ onBook }) {
             variants={fadeUp}
           >
             <div className="spaces-index" role="tablist" aria-label="Spazi prenotabili">
-              {SPACES.map((item, i) => {
-                const isActive = i === active
+              {items.map((item, i) => {
+                const isActive = i === index
                 return (
                   <button
                     key={item.id}
@@ -190,7 +146,7 @@ export default function Spaces({ onBook }) {
                 {bookable ? (
                   <button className="btn" type="button" onClick={() => onBook?.(space.id)}>
                     <img src="/assets/icon-explore.svg" alt="" width={18} height={18} />
-                    Prenota
+                    {spaces.ctaLabel}
                   </button>
                 ) : (
                   <p className="space-closed">Prenotazioni chiuse</p>
@@ -207,23 +163,23 @@ export default function Spaces({ onBook }) {
             transition={{ duration: 0.85, delay: 0.08, ease: [0.22, 1, 0.36, 1] }}
           >
             <div className="spaces-photo">
-              {SPACES.map((item, i) => (
+              {items.map((item, i) => (
                 <img
                   key={item.id}
                   src={item.image}
-                  alt={i === active ? item.name : ''}
+                  alt={i === index ? item.name : ''}
                   width={720}
                   height={560}
-                  className={i === active ? 'is-active' : ''}
+                  className={i === index ? 'is-active' : ''}
                 />
               ))}
             </div>
             <div className="features-dock">
-              {SPACES.map((item, i) => (
+              {items.map((item, i) => (
                 <div
                   key={item.id}
-                  className={`features${i === active ? ' is-active' : ''}`}
-                  aria-hidden={i !== active}
+                  className={`features${i === index ? ' is-active' : ''}`}
+                  aria-hidden={i !== index}
                 >
                   {item.features.map((feat) => (
                     <div className="feature" key={feat.title}>

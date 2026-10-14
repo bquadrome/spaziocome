@@ -1,7 +1,10 @@
 import { motion } from 'framer-motion'
 import { fadeUp, stagger, viewport } from '../motion.js'
+import { useSiteStore } from '../store/siteStore.js'
 
 export default function Footer() {
+  const { footer, header } = useSiteStore()
+
   return (
     <footer className="footer">
       <motion.div
@@ -22,41 +25,31 @@ export default function Footer() {
         </motion.div>
         <motion.div variants={fadeUp}>
           <h3>Sede</h3>
-          <p>Via I Settembre, 15 - quarto piano</p>
-          <p>Presso Residence Liberty</p>
-          <p>98122 – Messina</p>
+          <p>{footer.address1}</p>
+          <p>{footer.address2}</p>
+          <p>{footer.address3}</p>
         </motion.div>
         <motion.div variants={fadeUp}>
           <h3>Contatti</h3>
-          <a href="mailto:info@spaziocome.it">info@spaziocome.it</a>
+          <a href={`mailto:${footer.email}`}>{footer.email}</a>
+          <a className="footer-area" href={header.areaHref || '/staff'}>
+            {header.areaLabel || 'Area riservata'}
+          </a>
         </motion.div>
         <motion.div variants={fadeUp}>
           <h3>Seguici su</h3>
           <div className="socials">
-            <a
-              href="https://www.facebook.com/"
-              aria-label="Facebook"
-              target="_blank"
-              rel="noreferrer"
-            >
-              <img src="/assets/icon-social-1.svg" alt="" width={20} height={20} />
-            </a>
-            <a
-              href="https://www.instagram.com/"
-              aria-label="Instagram"
-              target="_blank"
-              rel="noreferrer"
-            >
-              <img src="/assets/icon-social-2.svg" alt="" width={20} height={20} />
-            </a>
-            <a
-              href="https://www.linkedin.com/company/spazio-come-coworking-messina/"
-              aria-label="LinkedIn"
-              target="_blank"
-              rel="noreferrer"
-            >
-              <img src="/assets/icon-social-3.svg" alt="" width={20} height={20} />
-            </a>
+            {footer.socials.map((social) => (
+              <a
+                key={social.label}
+                href={social.href}
+                aria-label={social.label}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <img src={social.icon} alt="" width={20} height={20} />
+              </a>
+            ))}
           </div>
         </motion.div>
       </motion.div>

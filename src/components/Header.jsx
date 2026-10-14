@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { easeOut, stagger } from '../motion.js'
+import { extLinkProps, useSiteStore } from '../store/siteStore.js'
 
 const menuItem = {
   hidden: { opacity: 0, y: 14 },
@@ -12,16 +13,15 @@ const menuItem = {
   },
 }
 
-const PRENOTA = '#spazi'
-const AREA = '/admin'
-const BIOS = 'https://www.associazionebios.org/'
-const LINKS = [
-  { href: '#progetto', label: 'Il progetto' },
-  { href: '#offriamo', label: 'Cosa offriamo' },
-  { href: '#spazi', label: 'Gli spazi' },
-]
+// L'header entra in dissolvenza solo alla prima apertura del sito, non a ogni cambio pagina.
+let headerShown = false
 
 export default function Header() {
+  useEffect(() => {
+    headerShown = true
+  }, [])
+  const site = useSiteStore()
+  const header = site.header
   const [open, setOpen] = useState(false)
   const [away, setAway] = useState(false)
 
@@ -79,32 +79,44 @@ export default function Header() {
     setOpen(false)
   }
 
+  function go(href) {
+    if (href?.startsWith('#') && window.location.pathname !== '/') return `/${href}`
+    return href
+  }
+
+  const biosProps = extLinkProps(header.biosHref)
+  const onHome = window.location.pathname === '/'
+  const nav = [
+    { label: 'Home', href: onHome ? '#top' : '/' },
+    { label: 'Chi siamo', href: go('#progetto') },
+    { label: 'Eventi', href: '/eventi' },
+  ]
+
   return (
     <>
       <motion.header
         className={`header${away && !open ? ' is-away' : ''}${open ? ' is-open' : ''}`}
-        initial={{ opacity: 0 }}
+        initial={headerShown ? false : { opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.7, delay: 0.12, ease: easeOut }}
       >
         <nav className="nav-pill" aria-label="Principale">
-          <a className="nav-logo" href="#top" aria-label="Spazio Come" onClick={close}>
+          <a className="nav-logo" href={onHome ? '#top' : '/'} aria-label="Spazio Come" onClick={close}>
             <img src="/assets/logo-nav-raw.png" alt="come*" width={122} height={48} />
           </a>
+          <div className="nav-links nav-desktop">
+            {nav.map((link) => (
+              <a key={link.label} className="nav-link" href={link.href}>
+                {link.label}
+              </a>
+            ))}
+            <a className="nav-link" {...biosProps}>
+              {header.biosLabel}
+            </a>
+          </div>
           <div className="nav-actions nav-desktop">
-            <a
-              className="nav-credit"
-              href={BIOS}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Ideato da BIOS
-            </a>
-            <a className="nav-btn nav-btn-fill" href={PRENOTA}>
-              Prenota il tuo spazio
-            </a>
-            <a className="nav-btn nav-btn-ghost" href={AREA}>
-              Area Riservata
+            <a className="nav-btn nav-btn-fill" href={go(header.bookHref)}>
+              {header.bookLabel}
             </a>
           </div>
           <button
@@ -140,26 +152,17 @@ export default function Header() {
                 animate="show"
                 variants={stagger}
               >
-                {LINKS.map((link) => (
-                  <motion.a key={link.href} href={link.href} onClick={close} variants={menuItem}>
+                {nav.map((link) => (
+                  <motion.a key={link.label} href={link.href} onClick={close} variants={menuItem}>
                     {link.label}
                   </motion.a>
                 ))}
               </motion.nav>
-              <a className="nav-btn nav-btn-fill" href={PRENOTA} onClick={close}>
-                Prenota il tuo spazio
+              <a className="nav-btn nav-btn-fill" href={go(header.bookHref)} onClick={close}>
+                {header.bookLabel}
               </a>
-              <a className="mobile-menu-quiet" href={AREA} onClick={close}>
-                Area riservata
-              </a>
-              <a
-                className="nav-credit"
-                href={BIOS}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={close}
-              >
-                Ideato da BIOS
+              <a className="nav-credit" {...biosProps} onClick={close}>
+                {header.biosLabel}
               </a>
             </motion.div>
           ) : null}

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import GuestModal from './GuestModal.jsx'
-import { EVENT_COLORS, formatISO, useBookingStore } from '../../store/bookingStore.js'
+import { bookingPhase, formatISO, todayISO, typeColor, useBookingStore } from '../../store/bookingStore.js'
 
 function guestName(item) {
   return [item.firstName, item.lastName].filter(Boolean).join(' ') || 'Ospite'
@@ -14,7 +14,7 @@ function guestWhen(item) {
 }
 
 export default function AdminGuests() {
-  const { guests = [] } = useBookingStore()
+  const { guests = [], colors = {} } = useBookingStore()
   const [modal, setModal] = useState(null)
 
   const list = useMemo(() => {
@@ -43,10 +43,16 @@ export default function AdminGuests() {
 
         <div className="guest-list">
           {list.map((item) => (
-            <article className={`admin-card${item.status !== 'active' ? ' is-off' : ''}`} key={item.id}>
+            <article className={`admin-card${bookingPhase(item, todayISO()) === 'cancelled' ? ' is-off' : ''}`} key={item.id}>
               <header>
-                <b style={{ color: EVENT_COLORS.ospite }}>{guestName(item)}</b>
-                <span>{item.status === 'active' ? 'Attivo' : 'Annullato'}</span>
+                <b style={{ color: typeColor(colors, 'ospite') }}>{guestName(item)}</b>
+                <span>
+                  {bookingPhase(item, todayISO()) === 'past'
+                    ? 'Passato'
+                    : bookingPhase(item, todayISO()) === 'active'
+                      ? 'Attivo'
+                      : 'Annullato'}
+                </span>
               </header>
               <p>{guestWhen(item)}</p>
               {item.email || item.phone ? (

@@ -2,7 +2,7 @@
   "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }],
   "headers": [
     {
-      "source": "/admin(.*)",
+      "source": "/(admin|staff|reception|prenotazione|preventivo|iscrizione)(.*)",
       "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow" }]
     }
   ]

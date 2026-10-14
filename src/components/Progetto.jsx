@@ -1,8 +1,33 @@
 import { motion } from 'framer-motion'
+import { useRef } from 'react'
 import DecoArrow from './DecoArrow.jsx'
 import { fadeUp, stagger, viewport } from '../motion.js'
+import { extLinkProps, useSiteStore } from '../store/siteStore.js'
 
 export default function Progetto() {
+  const { progetto } = useSiteStore()
+  const cta = extLinkProps(progetto.ctaHref)
+  const photo = useRef(null)
+
+  // Inclinazione 3D che segue il mouse (solo puntatore preciso, niente con "riduci movimento").
+  function tilt(event) {
+    const el = photo.current
+    if (!el || event.pointerType !== 'mouse') return
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    const box = el.getBoundingClientRect()
+    const x = (event.clientX - box.left) / box.width - 0.5
+    const y = (event.clientY - box.top) / box.height - 0.5
+    el.style.setProperty('--ry', `${(x * 10).toFixed(2)}deg`)
+    el.style.setProperty('--rx', `${(-y * 10).toFixed(2)}deg`)
+  }
+
+  function untilt() {
+    const el = photo.current
+    if (!el) return
+    el.style.setProperty('--ry', '0deg')
+    el.style.setProperty('--rx', '0deg')
+  }
+
   return (
     <section className="progetto" id="progetto">
       <div className="container">
@@ -15,21 +40,18 @@ export default function Progetto() {
         >
           <motion.p className="section-label" variants={fadeUp}>
             <img src="/assets/icon-label.svg" alt="" width={24} height={24} />
-            <span>IL PROGETTO</span>
+            <span>{progetto.label}</span>
           </motion.p>
           <motion.h2 variants={fadeUp}>
-            Co.Me.
-            <span className="rest"> è il progetto di innovazione </span>
-            numero 1 in Sicilia
+            {progetto.titleLead}
+            <span className="rest">{progetto.titleMid}</span>
+            {progetto.titleTail}
           </motion.h2>
-          <motion.p variants={fadeUp}>
-            Da qui nasce Spazio COME un coworking 2.0 dove professionisti, startup, studenti e
-            associazioni si incontrano, collaborano e fanno crescere nuove idee.
-          </motion.p>
-          <motion.p variants={fadeUp}>Dove le connessioni diventano opportunità.</motion.p>
-          <motion.a className="btn" href="#spazi" variants={fadeUp}>
+          <motion.p variants={fadeUp}>{progetto.text1}</motion.p>
+          <motion.p variants={fadeUp}>{progetto.text2}</motion.p>
+          <motion.a className="btn" {...cta} variants={fadeUp}>
             <img src="/assets/icon-explore.svg" alt="" width={18} height={18} />
-            Esplora lo spazio
+            {progetto.ctaLabel}
           </motion.a>
         </motion.div>
         <motion.div
@@ -40,10 +62,10 @@ export default function Progetto() {
           transition={{ duration: 0.8, delay: 0.12, ease: [0.22, 1, 0.36, 1] }}
         >
           <DecoArrow src="/assets/arrow.svg" />
-          <div className="progetto-photo">
+          <div className="progetto-photo" ref={photo} onPointerMove={tilt} onPointerLeave={untilt}>
             <img
-              src="/assets/progetto.png"
-              alt="Open space coworking di Spazio COME a Messina"
+              src={progetto.image}
+              alt={progetto.imageAlt}
               width={616}
               height={463}
             />

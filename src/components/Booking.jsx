@@ -2,15 +2,19 @@ import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { easeOut } from '../motion.js'
 import CalendarMonth from './admin/CalendarMonth.jsx'
+import CoworkingMap, { usesCoworkingMap } from './CoworkingMap.jsx'
 import {
+  activeCustomFields,
   addBooking,
+  submitQuoteRequest,
+  customError,
+  customValue,
   dateHasFreeSlot,
   formatISO,
   isDateBookable,
   isSlotFull,
   isStationTaken,
-  slotCapacity,
-  slotOccupancy,
+  setCustomValue,
   useBookingStore,
 } from '../store/bookingStore.js'
 
@@ -37,6 +41,7 @@ export default function Booking({ initialId = '', onClose }) {
     phone: '',
     notes: '',
     extra: '',
+    custom: [],
     stationId: '',
     privacy: false,
   })
@@ -67,7 +72,9 @@ export default function Booking({ initialId = '', onClose }) {
 
   const selectedSlots = (config?.slots ?? []).filter((slot) => form.slotIds.includes(slot.id))
   const selectedStation = (config?.stations ?? []).find((item) => item.id === form.stationId)
-  const cap = slotCapacity(config)
+  const customFields = activeCustomFields(config)
+  const isRequest = !!config?.requestMode
+  const emailRequired = isRequest || !!config?.fields?.email?.required
 
   const canNext = useMemo(() => {
     if (!config) return false
@@ -80,15 +87,21 @@ export default function Booking({ initialId = '', onClose }) {
       const { fields, extraMenu } = config
       if (fields.firstName.enabled && fields.firstName.required && !form.firstName.trim()) return false
       if (fields.lastName.enabled && fields.lastName.required && !form.lastName.trim()) return false
-      if (fields.email.enabled && fields.email.required && !form.email.trim()) return false
+      if ((fields.email.enabled || isRequest) && emailRequired && !form.email.trim()) return false
       if (fields.phone.enabled && fields.phone.required && !form.phone.trim()) return false
       if (fields.notes.enabled && fields.notes.required && !form.notes.trim()) return false
       if (extraMenu.enabled && extraMenu.required && !form.extra) return false
+      if (customFields.some((field) => field.required && !customValue(form.custom, field.id).trim())) return false
       if (!form.privacy) return false
       return true
     }
     return true
   }, [step, form, config])
+
+  function setCustom(field, value) {
+    setForm((prev) => ({ ...prev, custom: setCustomValue(prev.custom, field, value) }))
+    setErrors((prev) => ({ ...prev, [`custom-${field.id}`]: '' }))
+  }
 
   function setField(key, value) {
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -141,11 +154,6 @@ export default function Booking({ initialId = '', onClose }) {
     return form.dates.some((date) => isSlotFull(initialId, date, slotId))
   }
 
-  function slotLeft(slotId) {
-    if (!form.dates.length) return cap
-    return Math.min(...form.dates.map((date) => cap - slotOccupancy(initialId, date, slotId)))
-  }
-
   function stationBusy(stationId) {
     return !stationFree(form.dates, form.slotIds, stationId)
   }
@@ -172,7 +180,7 @@ export default function Booking({ initialId = '', onClose }) {
       if (fields.lastName.enabled && fields.lastName.required && !form.lastName.trim()) {
         next.lastName = 'Obbligatorio.'
       }
-      if (fields.email.enabled && fields.email.required) {
+      if ((fields.email.enabled || isRequest) && emailRequired) {
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) next.email = 'Mail non valida.'
       } else if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
         next.email = 'Mail non valida.'
@@ -180,6 +188,10 @@ export default function Booking({ initialId = '', onClose }) {
       if (fields.phone.enabled && fields.phone.required && !form.phone.trim()) next.phone = 'Obbligatorio.'
       if (fields.notes.enabled && fields.notes.required && !form.notes.trim()) next.notes = 'Obbligatorio.'
       if (extraMenu.enabled && extraMenu.required && !form.extra) next.extra = 'Seleziona una voce.'
+      for (const field of customFields) {
+        const message = customError(field, customValue(form.custom, field.id))
+        if (message) next[`custom-${field.id}`] = message
+      }
       if (!form.privacy) next.privacy = 'Serve il consenso al trattamento dei dati.'
     }
     setErrors(next)
@@ -197,13 +209,17 @@ export default function Booking({ initialId = '', onClose }) {
 
   async function onSubmit(event) {
     event.preventDefault()
+    if (step < 4) {
+      if (canNext) goNext()
+      return
+    }
     if (!form.privacy) {
       setErrors({ privacy: 'Serve il consenso al trattamento dei dati.' })
       setStep(3)
       return
     }
     if (!validate()) return
-    const result = await addBooking({
+    const payload = {
       eventId: initialId,
       dates: form.dates,
       slotIds: form.slotIds,
@@ -214,7 +230,11 @@ export default function Booking({ initialId = '', onClose }) {
       phone: form.phone.trim(),
       notes: form.notes.trim(),
       extra: form.extra,
-    })
+      custom: form.custom
+        .map((item) => ({ ...item, value: String(item.value).trim() }))
+        .filter((item) => item.value),
+    }
+    const result = isRequest ? await submitQuoteRequest(payload) : await addBooking(payload)
     if (!result.ok) {
       setErrors({ slots: result.error })
       setStep(2)
@@ -241,20 +261,30 @@ export default function Booking({ initialId = '', onClose }) {
     <div className="booking-done">
       <p className="section-label">
         <img src="/assets/icon-label.svg" alt="" width={24} height={24} />
-        <span>PRENOTAZIONE</span>
+        <span>{isRequest ? 'RICHIESTA' : 'PRENOTAZIONE'}</span>
       </p>
       <h1 id="book-title">
         Richiesta
         <br />
         <span className="rest">inviata.</span>
       </h1>
-      <p>
-        Grazie {form.firstName || ''}. Prenotazione per <strong>{config.name}</strong>:{' '}
-        {form.dates.map(formatISO).join(', ')} ·{' '}
-        {selectedSlots.map((slot) => `${slot.start}–${slot.end}`).join(', ')}
-        {selectedStation ? ` · ${selectedStation.label}` : ''}. Ti invieremo una mail
-        a <strong>{form.email}</strong>.
-      </p>
+      {isRequest ? (
+        <p>
+          Grazie {form.firstName || ''}. Abbiamo ricevuto la tua richiesta per <strong>{config.name}</strong>:{' '}
+          {form.dates.map(formatISO).join(', ')} · {selectedSlots.map((slot) => `${slot.start}–${slot.end}`).join(', ')}.
+          Ti invieremo un preventivo a <strong>{form.email}</strong>: la data sarà confermata dopo l’accettazione e il
+          pagamento.
+        </p>
+      ) : (
+        <p>
+          Grazie {form.firstName || ''}. Prenotazione per <strong>{config.name}</strong>:{' '}
+          {form.dates.map(formatISO).join(', ')} ·{' '}
+          {selectedSlots.map((slot) => `${slot.start}–${slot.end}`).join(', ')}
+          {selectedStation ? ` · ${selectedStation.label}` : ''}. Ti invieremo una mail
+          a <strong>{form.email}</strong> con il riepilogo
+          {config.hasQr ? ', il pass QR per la reception' : ''} e il link per annullare.
+        </p>
+      )}
       <button className="btn btn-solid" type="button" onClick={onClose}>
         Chiudi
       </button>
@@ -264,13 +294,19 @@ export default function Booking({ initialId = '', onClose }) {
       <header className="booking-head">
         <p className="section-label">
           <img src="/assets/icon-label.svg" alt="" width={24} height={24} />
-          <span>PRENOTA</span>
+          <span>{isRequest ? 'RICHIEDI UN PREVENTIVO' : 'PRENOTA'}</span>
         </p>
         <h1 id="book-title">
           {config.name}
           <br />
-          <span className="rest">prenota.</span>
+          <span className="rest">{isRequest ? 'richiedi.' : 'prenota.'}</span>
         </h1>
+        {isRequest ? (
+          <p className="book-request-note">
+            Scegli una o più date e orari: riceverai un preventivo via mail. La data è confermata solo dopo
+            accettazione e pagamento.
+          </p>
+        ) : null}
       </header>
 
       {!config.enabled ? (
@@ -319,7 +355,6 @@ export default function Booking({ initialId = '', onClose }) {
                         {config.slots.map((slot) => {
                           const busy = form.dates.length > 0 && slotBusy(slot.id)
                           const on = form.slotIds.includes(slot.id)
-                          const left = form.dates.length ? slotLeft(slot.id) : cap
                           return (
                             <button
                               key={slot.id}
@@ -329,7 +364,7 @@ export default function Booking({ initialId = '', onClose }) {
                               onClick={() => toggleSlot(slot.id)}
                             >
                               {slot.start} – {slot.end}
-                              {busy ? ' (pieno)' : cap > 1 && !config.hasStations ? ` · ${left}` : ''}
+                              {busy ? ' (pieno)' : ''}
                             </button>
                           )
                         })}
@@ -339,25 +374,35 @@ export default function Booking({ initialId = '', onClose }) {
                     {config.hasStations ? (
                       <div className="book-stations">
                         <p className="book-hint">Scegli una postazione.</p>
-                        <div className="book-slots">
-                          {(config.stations ?? []).map((station) => {
-                            const busy =
-                              form.dates.length > 0 && form.slotIds.length > 0 && stationBusy(station.id)
-                            const on = form.stationId === station.id
-                            return (
-                              <button
-                                key={station.id}
-                                type="button"
-                                className={`book-slot${on ? ' is-on' : ''}${busy ? ' is-full' : ''}`}
-                                disabled={!form.dates.length || !form.slotIds.length || busy}
-                                onClick={() => setField('stationId', on ? '' : station.id)}
-                              >
-                                {station.label}
-                                {busy ? ' (occupata)' : ''}
-                              </button>
-                            )
-                          })}
-                        </div>
+                        {usesCoworkingMap(initialId, config.stations) ? (
+                          <CoworkingMap
+                            stations={config.stations}
+                            value={form.stationId}
+                            onChange={(id) => setField('stationId', id)}
+                            isBusy={stationBusy}
+                            ready={form.dates.length > 0 && form.slotIds.length > 0}
+                          />
+                        ) : (
+                          <div className="book-slots">
+                            {(config.stations ?? []).map((station) => {
+                              const busy =
+                                form.dates.length > 0 && form.slotIds.length > 0 && stationBusy(station.id)
+                              const on = form.stationId === station.id
+                              return (
+                                <button
+                                  key={station.id}
+                                  type="button"
+                                  className={`book-slot${on ? ' is-on' : ''}${busy ? ' is-full' : ''}`}
+                                  disabled={!form.dates.length || !form.slotIds.length || busy}
+                                  onClick={() => setField('stationId', on ? '' : station.id)}
+                                >
+                                  {station.label}
+                                  {busy ? ' (occupata)' : ''}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        )}
                         {errors.stationId ? <p className="book-error">{errors.stationId}</p> : null}
                       </div>
                     ) : null}
@@ -394,9 +439,9 @@ export default function Booking({ initialId = '', onClose }) {
                           {errors.lastName ? <small>{errors.lastName}</small> : null}
                         </label>
                       ) : null}
-                      {config.fields.email.enabled ? (
+                      {config.fields.email.enabled || isRequest ? (
                         <label className="book-field">
-                          <span>Email{config.fields.email.required ? '' : ' (opzionale)'}</span>
+                          <span>Email{emailRequired ? '' : ' (opzionale)'}</span>
                           <input
                             type="email"
                             value={form.email}
@@ -420,6 +465,34 @@ export default function Booking({ initialId = '', onClose }) {
                           {errors.phone ? <small>{errors.phone}</small> : null}
                         </label>
                       ) : null}
+                      {customFields.map((field) => {
+                        const value = customValue(form.custom, field.id)
+                        const message = errors[`custom-${field.id}`]
+                        const label = `${field.label}${field.required ? '' : ' (opzionale)'}`
+                        return (
+                          <label className="book-field" key={field.id}>
+                            <span>{label}</span>
+                            {field.type === 'select' ? (
+                              <select value={value} onChange={(e) => setCustom(field, e.target.value)}>
+                                <option value="">Seleziona</option>
+                                {(field.options ?? []).filter(Boolean).map((opt) => (
+                                  <option key={opt} value={opt}>
+                                    {opt}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <input
+                                type="text"
+                                inputMode={field.type === 'number' ? 'decimal' : undefined}
+                                value={value}
+                                onChange={(e) => setCustom(field, e.target.value)}
+                              />
+                            )}
+                            {message ? <small>{message}</small> : null}
+                          </label>
+                        )
+                      })}
                       {config.extraMenu.enabled ? (
                         <label className="book-field book-field-wide">
                           <span>
@@ -508,6 +581,15 @@ export default function Booking({ initialId = '', onClose }) {
                           ) : null}
                         </dd>
                       </div>
+                      {customFields.map((field) => {
+                        const value = customValue(form.custom, field.id).trim()
+                        return value ? (
+                          <div key={field.id}>
+                            <dt>{field.label}</dt>
+                            <dd>{value}</dd>
+                          </div>
+                        ) : null
+                      })}
                       {form.extra ? (
                         <div>
                           <dt>{config.extraMenu.label}</dt>
@@ -537,11 +619,11 @@ export default function Booking({ initialId = '', onClose }) {
                 </button>
               )}
               {step < 4 ? (
-                <button className="btn btn-solid" type="button" onClick={goNext} disabled={!canNext}>
+                <button key="next" className="btn btn-solid" type="button" onClick={goNext} disabled={!canNext}>
                   Avanti
                 </button>
               ) : (
-                <button className="btn btn-solid" type="submit">
+                <button key="submit" className="btn btn-solid" type="submit">
                   Invia richiesta
                 </button>
               )}

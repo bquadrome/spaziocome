@@ -45,6 +45,18 @@ function slotLabel(slots: { id?: string; start?: string; end?: string }[], slotI
   return hit.map((slot) => `${slot.start ?? ''}–${slot.end ?? ''}`).join(', ')
 }
 
+const SITE_URL = (Deno.env.get('SITE_URL') ?? 'https://www.spaziocome.it').replace(/\/+$/, '')
+const ALLOWED_ORIGINS = new Set([SITE_URL, 'https://www.spaziocome.it', 'https://spaziocome.it', 'http://localhost:5173'])
+
+function siteUrl(origin: unknown) {
+  const value = String(origin ?? '').replace(/\/+$/, '')
+  return ALLOWED_ORIGINS.has(value) ? value : SITE_URL
+}
+
+function escapeHtml(text: string) {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
 async function sendResend(
   apiKey: string,
   payload: { from: string; to: string; subject: string; text: string },
@@ -62,10 +74,10 @@ async function sendResend(
       to: [payload.to],
       subject: payload.subject,
       text: payload.text,
-      html: `<pre style="font-family:inherit;white-space:pre-wrap">${payload.text
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')}</pre>`,
+      html: `<pre style="font-family:inherit;white-space:pre-wrap">${escapeHtml(payload.text).replace(
+        /https?:\/\/[^\s<]+/g,
+        (url) => `<a href="${url}">${url}</a>`,
+      )}</pre>`,
     }),
   })
   const data = await res.json()
@@ -102,6 +114,7 @@ Deno.serve(async (req) => {
     const body = await req.json()
     const bookingId = String(body?.bookingId ?? '')
     const kind = String(body?.kind ?? '')
+    const byGuest = body?.by === 'guest'
     if (!bookingId || (kind !== 'confirm' && kind !== 'cancel')) {
       return json(400, { error: 'bookingId e kind (confirm|cancel) obbligatori' })
     }
@@ -118,9 +131,19 @@ Deno.serve(async (req) => {
     if (bookErr) throw bookErr
     if (!booking) return json(404, { error: 'Prenotazione non trovata' })
 
+    const jwt = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '')
+    const { data: userData } = jwt ? await supabase.auth.getUser(jwt) : { data: { user: null } }
+    const isStaff = !!userData?.user
+    const fresh = Date.now() - new Date(booking.created_at).getTime() < 15 * 60 * 1000
+    const ownCancel =
+      kind === 'cancel' && byGuest && booking.status === 'cancelled' && String(body?.token ?? '') === String(booking.token)
+    if (!isStaff && !(kind === 'confirm' && fresh) && !ownCancel) {
+      return json(403, { error: 'Non autorizzato' })
+    }
+
     const { data: event, error: eventErr } = await supabase
       .from('events')
-      .select('id, name, slots, emails')
+      .select('id, name, slots, emails, has_qr')
       .eq('id', booking.event_id)
       .maybeSingle()
     if (eventErr) throw eventErr
@@ -129,7 +152,8 @@ Deno.serve(async (req) => {
     const spazio = event?.name ?? booking.event_id
     const date = dateLabel(booking.dates ?? [])
     const slot = slotLabel(event?.slots ?? [], booking.slot_ids ?? [])
-    const vars = { nome, spazio, date, slot }
+    const link = booking.token ? `${siteUrl(body?.origin)}/prenotazione/${booking.token}` : ''
+    const vars = { nome, spazio, date, slot, link }
 
     const emails = (event?.emails ?? {}) as {
       confirm?: { subject?: string; body?: string }
@@ -139,11 +163,18 @@ Deno.serve(async (req) => {
     const subject =
       tpl?.subject?.trim() ||
       (kind === 'cancel' ? 'Prenotazione annullata — Spazio COME' : 'Conferma prenotazione — Spazio COME')
+    const custom = fill(tpl?.body ?? '', vars).trim()
+    const linkBlock =
+      kind === 'confirm' && link && !/\{\{link\}\}/.test(tpl?.body ?? '')
+        ? event?.has_qr
+          ? `\n\nIl tuo pass personale (QR da mostrare in reception) e il link per annullare:\n${link}`
+          : `\n\nPer vedere o annullare la prenotazione:\n${link}`
+        : ''
     const text =
-      fill(tpl?.body ?? '', vars).trim() ||
+      (custom ? custom + linkBlock : '') ||
       (kind === 'cancel'
         ? `Ciao ${nome},\n\nLa tua prenotazione per ${spazio} (${date}) è stata annullata.\n\nSpazio COME`
-        : `Ciao ${nome},\n\nLa tua prenotazione per ${spazio} è confermata.\nGiorni: ${date}\nOrari: ${slot}\n\nA presto,\nSpazio COME`)
+        : `Ciao ${nome},\n\nLa tua prenotazione per ${spazio} è confermata.\nGiorni: ${date}\nOrari: ${slot}${linkBlock}\n\nA presto,\nSpazio COME`)
 
     const cfg = await mailConfig(supabase)
     const from = cfg.from
@@ -160,15 +191,19 @@ Deno.serve(async (req) => {
       }
     }
 
-    if (kind === 'confirm' && staff) {
+    if ((kind === 'confirm' || byGuest) && staff) {
+      const title = kind === 'confirm' ? 'Nuova prenotazione' : 'Prenotazione annullata dall’utente'
       const staffText = [
-        'Nuova prenotazione — Spazio COME',
+        `${title} — Spazio COME`,
         `Spazio: ${spazio}`,
         `Nome: ${nome}`,
         `Email: ${booking.email || '—'}`,
         `Telefono: ${booking.phone || '—'}`,
         `Date: ${date}`,
         `Orari: ${slot}`,
+        ...(Array.isArray(booking.custom) ? booking.custom : []).map(
+          (item: { label?: string; value?: string }) => `${item.label ?? ''}: ${item.value ?? ''}`,
+        ),
         booking.extra ? `Extra: ${booking.extra}` : '',
         booking.notes ? `Note: ${booking.notes}` : '',
       ]
@@ -178,7 +213,7 @@ Deno.serve(async (req) => {
         await sendResend(cfg.apiKey, {
           from,
           to: staff,
-          subject: `Nuova prenotazione — ${spazio} — ${nome}`,
+          subject: `${title} — ${spazio} — ${nome}`,
           text: staffText,
         })
         sent.push('staff')
