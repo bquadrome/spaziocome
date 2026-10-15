@@ -143,27 +143,42 @@ export default function Header() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.28, ease: easeOut }}
+              transition={{ duration: 0.25, ease: easeOut }}
+              onClick={close}
             >
-              <motion.nav
-                className="mobile-menu-links"
-                aria-label="Sezioni"
-                initial="hidden"
-                animate="show"
-                variants={stagger}
+              <motion.div
+                className="mobile-sheet"
+                onClick={(event) => event.stopPropagation()}
+                initial={{ opacity: 0, y: -14, scale: 0.97 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -10, scale: 0.98 }}
+                transition={{ duration: 0.34, ease: easeOut }}
               >
-                {nav.map((link) => (
-                  <motion.a key={link.label} href={link.href} onClick={close} variants={menuItem}>
-                    {link.label}
-                  </motion.a>
-                ))}
-              </motion.nav>
-              <a className="nav-btn nav-btn-fill" href={go(header.bookHref)} onClick={close}>
-                {header.bookLabel}
-              </a>
-              <a className="nav-credit" {...biosProps} onClick={close}>
-                {header.biosLabel}
-              </a>
+                <motion.nav
+                  className="mobile-menu-links"
+                  aria-label="Sezioni"
+                  initial="hidden"
+                  animate="show"
+                  variants={stagger}
+                >
+                  {nav.map((link) => (
+                    <motion.a key={link.label} href={link.href} onClick={close} variants={menuItem}>
+                      <span className="mm-label">{link.label}</span>
+                    </motion.a>
+                  ))}
+                </motion.nav>
+                <motion.div variants={menuItem} initial="hidden" animate="show" className="mm-foot">
+                  <a className="nav-btn nav-btn-fill" href={go(header.bookHref)} onClick={close}>
+                    {header.bookLabel}
+                  </a>
+                  <a className="mm-credit" {...biosProps} onClick={close}>
+                    {header.biosLabel}
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M8 16 16 8M9.5 8H16v6.5" />
+                    </svg>
+                  </a>
+                </motion.div>
+              </motion.div>
             </motion.div>
           ) : null}
         </AnimatePresence>,

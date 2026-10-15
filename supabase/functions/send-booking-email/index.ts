@@ -45,8 +45,8 @@ function slotLabel(slots: { id?: string; start?: string; end?: string }[], slotI
   return hit.map((slot) => `${slot.start ?? ''}–${slot.end ?? ''}`).join(', ')
 }
 
-const SITE_URL = (Deno.env.get('SITE_URL') ?? 'https://www.spaziocome.it').replace(/\/+$/, '')
-const ALLOWED_ORIGINS = new Set([SITE_URL, 'https://www.spaziocome.it', 'https://spaziocome.it', 'http://localhost:5173'])
+const SITE_URL = (Deno.env.get('SITE_URL') ?? 'https://spaziocome.vercel.app').replace(/\/+$/, '')
+const ALLOWED_ORIGINS = new Set([SITE_URL, 'https://spaziocome.vercel.app', 'https://www.spaziocome.it', 'https://spaziocome.it', 'http://localhost:5173'])
 
 function siteUrl(origin: unknown) {
   const value = String(origin ?? '').replace(/\/+$/, '')

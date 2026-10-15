@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
 import AdminLogin from './admin/AdminLogin.jsx'
 import { supabase } from '../lib/supabase.js'
 import {
@@ -174,19 +175,30 @@ function EventCard({ event, people, shown, open, onToggle, date, busyId, onMark,
           <path d="M7 10.2 12 15l5-4.8" />
         </svg>
       </button>
-      {open ? (
-        <div className="rec-event-body" id={panelId}>
-          {shown.length ? (
-            <ul className="rec-list">
-              {shown.map((item) => (
-                <PersonRow key={item.id} item={item} date={date} busy={busyId === item.id} onMark={onMark} showWhere={false} />
-              ))}
-            </ul>
-          ) : (
-            <p className="admin-hint">{searching ? 'Nessun partecipante con questo nome.' : 'Ancora nessun iscritto.'}</p>
-          )}
-        </div>
-      ) : null}
+      <AnimatePresence initial={false}>
+        {open ? (
+          <motion.div
+            className="rec-event-panel"
+            id={panelId}
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ height: { duration: 0.32, ease: [0.22, 1, 0.36, 1] }, opacity: { duration: 0.2 } }}
+          >
+            <div className="rec-event-body">
+              {shown.length ? (
+                <ul className="rec-list">
+                  {shown.map((item) => (
+                    <PersonRow key={item.id} item={item} date={date} busy={busyId === item.id} onMark={onMark} showWhere={false} />
+                  ))}
+                </ul>
+              ) : (
+                <p className="admin-hint">{searching ? 'Nessun partecipante con questo nome.' : 'Ancora nessun iscritto.'}</p>
+              )}
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </section>
   )
 }
