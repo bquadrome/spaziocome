@@ -251,6 +251,29 @@ export default function Booking({ initialId = '', onClose }) {
         .filter((item) => item.value),
     }
     const days = sortedDates.filter((day) => daySlots(day).length > 0)
+
+    if (isRequest) {
+      // Spazi su richiesta: UNA sola richiesta di preventivo per tutta la selezione.
+      const unionSlots = [...new Set(days.flatMap((day) => daySlots(day)))]
+      const varies = days.some(
+        (day) => daySlots(day).slice().sort().join('|') !== daySlots(days[0]).slice().sort().join('|'),
+      )
+      const breakdown = days
+        .map((day) => `${formatISO(day)}: ${daySlots(day).map(slotLabel).join(', ')}`)
+        .join(' | ')
+      const notes =
+        varies && breakdown ? [base.notes, `Orari per giorno: ${breakdown}`].filter(Boolean).join('\n') : base.notes
+      const result = await submitQuoteRequest({ eventId: initialId, dates: days, slotIds: unionSlots, ...base, notes })
+      if (!result.ok) {
+        setErrors({ slots: result.error })
+        setStep(2)
+        return
+      }
+      setSent(true)
+      return
+    }
+
+    // Prenotazioni dirette: valida i conflitti, poi raggruppa i giorni con gli stessi orari in un'unica prenotazione.
     for (const day of days) {
       const conflict = bookingConflict(
         { eventId: initialId, dates: [day], slotIds: daySlots(day), stationId: form.stationId },
@@ -262,10 +285,16 @@ export default function Booking({ initialId = '', onClose }) {
         return
       }
     }
-    let firstErr = null
+    const groups = new Map()
     for (const day of days) {
-      const payload = { eventId: initialId, dates: [day], slotIds: daySlots(day), ...base }
-      const result = isRequest ? await submitQuoteRequest(payload) : await addBooking(payload)
+      const ids = daySlots(day)
+      const key = ids.slice().sort().join('|')
+      if (!groups.has(key)) groups.set(key, { slotIds: ids, days: [] })
+      groups.get(key).days.push(day)
+    }
+    let firstErr = null
+    for (const group of groups.values()) {
+      const result = await addBooking({ eventId: initialId, dates: group.days, slotIds: group.slotIds, ...base })
       if (!result.ok) {
         firstErr = result.error
         break

@@ -203,8 +203,8 @@ Deno.serve(async (req) => {
       const text = `${message}${amountLine}\n\nAccetta il preventivo: ${page}?scelta=accetta\nRichiedi un nuovo preventivo: ${page}?scelta=modifica\n\nSpazio COME`
       const html = layout(
         `${textHtml(message)}${importo ? `<p style="margin:18px 0 0;font-size:17px"><strong>Importo: ${escapeHtml(importo)}</strong></p>` : ''}` +
-          `<p style="margin:14px 0 4px;color:#555">Richiesta: ${escapeHtml(spazio)} · ${escapeHtml(date)} · ${escapeHtml(slot)}</p>` +
           `<p style="margin:22px 0 8px">${button(`${page}?scelta=accetta`, 'Accetta il preventivo', true)}${button(`${page}?scelta=modifica`, 'Richiedi nuovo preventivo', false)}</p>` +
+          `<p style="margin:14px 0 4px;color:#555">Richiesta: ${escapeHtml(spazio)} · ${escapeHtml(date)} · ${escapeHtml(slot)}</p>` +
           `<p style="margin:18px 0 0">Spazio COME</p>`,
       )
       mails.push({ who: 'guest', to: q.email, subject, text, html })
