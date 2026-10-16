@@ -3268,8 +3268,8 @@ button.btn {
   align-items: flex-start;
   min-width: 0;
   padding: 16px 14px 14px;
-  background: var(--wash);
-  color: var(--ink-tone);
+  background: var(--type, #7c4dff);
+  color: #fff;
 }
 
 .cal-card-date > span {
@@ -3291,8 +3291,8 @@ button.btn {
   width: 100%;
   margin-top: auto;
   padding-top: 8px;
-  border-top: 2px solid var(--ink-tone);
-  color: #6d7282;
+  border-top: 2px solid rgba(255, 255, 255, 0.35);
+  color: rgba(255, 255, 255, 0.85);
   font-size: 12px;
   font-weight: 500;
   line-height: 1.35;
@@ -3444,6 +3444,7 @@ button.btn {
   line-height: 1;
   cursor: pointer;
   white-space: nowrap;
+  text-decoration: none;
 }
 
 .gest-kicker {

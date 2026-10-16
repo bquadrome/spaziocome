@@ -665,6 +665,9 @@ export default function AdminCalendar() {
             <button type="button" className="gest-btn" onClick={() => setGuestModal({ type: 'new' })}>
               Aggiungi ospite
             </button>
+            <a className="gest-btn" href="/admin/eventi/nuovo">
+              Nuovo evento
+            </a>
           </div>
         </div>
         <div className="gest-links">
