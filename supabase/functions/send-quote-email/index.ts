@@ -155,7 +155,7 @@ Deno.serve(async (req) => {
       (kind === 'revision' && token && q.status === 'revision' && isFresh(q.revision_at))
     if (!allowed || (kind === 'quote' && !isStaff)) return json(403, { error: 'Non autorizzato' })
 
-    const { data: event } = await supabase.from('events').select('id, name, slots').eq('id', q.event_id).maybeSingle()
+    const { data: event } = await supabase.from('events').select('id, name, slots, emails').eq('id', q.event_id).maybeSingle()
 
     const site = siteUrl(body?.origin)
     const nome = [q.first_name, q.last_name].filter(Boolean).join(' ').trim() || 'cliente'
@@ -178,6 +178,7 @@ Deno.serve(async (req) => {
     ].filter(Boolean)
 
     const cfg = await mailConfig(supabase)
+    const staffTo = String((event?.emails as any)?.notify ?? '').trim() || cfg.staff
     const mails: { to: string; subject: string; text: string; html?: string; who: string }[] = []
 
     if (kind === 'request') {
@@ -189,7 +190,7 @@ Deno.serve(async (req) => {
       })
       mails.push({
         who: 'staff',
-        to: cfg.staff,
+        to: staffTo,
         subject: `Nuova richiesta preventivo — ${spazio} — ${nome}`,
         text: `Nuova richiesta preventivo — Spazio COME\n\n${details.join('\n')}\n\nRispondi dal pannello: ${admin}`,
       })
@@ -212,7 +213,7 @@ Deno.serve(async (req) => {
     if (kind === 'accepted') {
       mails.push({
         who: 'staff',
-        to: cfg.staff,
+        to: staffTo,
         subject: `Preventivo accettato — ${spazio} — ${nome}`,
         text: `Preventivo accettato — Spazio COME\n\n${importo ? `Importo: ${importo}\n` : ''}${details.join('\n')}\n\nInvia gli estremi di pagamento al cliente, poi segna il pagamento dal pannello: ${admin}`,
       })
@@ -227,7 +228,7 @@ Deno.serve(async (req) => {
     if (kind === 'revision') {
       mails.push({
         who: 'staff',
-        to: cfg.staff,
+        to: staffTo,
         subject: `Nuovo preventivo richiesto — ${spazio} — ${q.revision_name || nome}`,
         text: `Il cliente chiede un nuovo preventivo — Spazio COME\n\nNome: ${q.revision_name}\nEmail: ${q.revision_email}\n\nMessaggio:\n${q.revision_message}\n\n---\n${details.join('\n')}\n\nRispondi dal pannello: ${admin}`,
       })

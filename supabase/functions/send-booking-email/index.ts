@@ -178,7 +178,7 @@ Deno.serve(async (req) => {
 
     const cfg = await mailConfig(supabase)
     const from = cfg.from
-    const staff = cfg.staff
+    const staff = String((event?.emails as any)?.notify ?? '').trim() || cfg.staff
     const sent: string[] = []
     const errors: string[] = []
 

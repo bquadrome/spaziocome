@@ -6,6 +6,7 @@ import CoworkingMap, { usesCoworkingMap } from './CoworkingMap.jsx'
 import {
   activeCustomFields,
   addBooking,
+  bookingConflict,
   submitQuoteRequest,
   customError,
   customValue,
@@ -34,7 +35,7 @@ export default function Booking({ initialId = '', onClose }) {
   const [cursor, setCursor] = useState({ y: now.getFullYear(), m: now.getMonth() })
   const [form, setForm] = useState({
     dates: [],
-    slotIds: [],
+    slotsByDay: {},
     firstName: '',
     lastName: '',
     email: '',
@@ -70,7 +71,13 @@ export default function Booking({ initialId = '', onClose }) {
     return off
   }, [config, cursor, initialId, store.bookings])
 
-  const selectedSlots = (config?.slots ?? []).filter((slot) => form.slotIds.includes(slot.id))
+  const sortedDates = form.dates.slice().sort()
+  const daySlots = (iso) => form.slotsByDay[iso] ?? []
+  const anySlot = form.dates.some((iso) => daySlots(iso).length > 0)
+  const slotLabel = (id) => {
+    const slot = (config?.slots ?? []).find((s) => s.id === id)
+    return slot ? `${slot.start}–${slot.end}` : ''
+  }
   const selectedStation = (config?.stations ?? []).find((item) => item.id === form.stationId)
   const customFields = activeCustomFields(config)
   const isRequest = !!config?.requestMode
@@ -79,7 +86,8 @@ export default function Booking({ initialId = '', onClose }) {
   const canNext = useMemo(() => {
     if (!config) return false
     if (step === 2) {
-      if (!form.dates.length || !form.slotIds.length) return false
+      if (!form.dates.length) return false
+      if (!form.dates.every((iso) => daySlots(iso).length > 0)) return false
       if (config.hasStations && !form.stationId) return false
       return true
     }
@@ -113,61 +121,72 @@ export default function Booking({ initialId = '', onClose }) {
     setForm((prev) => {
       const has = prev.dates.includes(iso)
       let dates
-      if (has) dates = prev.dates.filter((d) => d !== iso)
-      else if (!config.allowMultiDay) dates = [iso]
-      else if (prev.dates.length >= config.maxDays) dates = prev.dates
-      else dates = [...prev.dates, iso].sort()
-      const slotIds = prev.slotIds.filter((id) => !dates.some((d) => isSlotFull(initialId, d, id)))
+      let slotsByDay = { ...prev.slotsByDay }
+      if (has) {
+        dates = prev.dates.filter((d) => d !== iso)
+        delete slotsByDay[iso]
+      } else if (!config.allowMultiDay) {
+        dates = [iso]
+        slotsByDay = { [iso]: prev.slotsByDay[iso] ?? [] }
+      } else if (prev.dates.length >= config.maxDays) {
+        return prev
+      } else {
+        dates = [...prev.dates, iso]
+        if (!slotsByDay[iso]) slotsByDay[iso] = []
+      }
       const stationId =
-        config.hasStations && prev.stationId && stationFree(dates, slotIds, prev.stationId)
+        config.hasStations && prev.stationId && stationFree(dates, slotsByDay, prev.stationId)
           ? prev.stationId
           : ''
-      return { ...prev, dates, slotIds, stationId }
+      return { ...prev, dates, slotsByDay, stationId }
     })
     setErrors((prev) => ({ ...prev, dates: '', slots: '', stationId: '' }))
   }
 
-  function toggleSlot(id) {
+  function toggleSlot(iso, id) {
     if (!config) return
     setForm((prev) => {
-      const has = prev.slotIds.includes(id)
-      let slotIds
-      if (has) slotIds = prev.slotIds.filter((s) => s !== id)
-      else if (!config.allowMultiSlot) slotIds = [id]
-      else if (prev.slotIds.length >= config.maxSlots) slotIds = prev.slotIds
-      else slotIds = [...prev.slotIds, id]
+      const cur = prev.slotsByDay[iso] ?? []
+      const has = cur.includes(id)
+      let next
+      if (has) next = cur.filter((s) => s !== id)
+      else if (!config.allowMultiSlot) next = [id]
+      else if (cur.length >= config.maxSlots) next = cur
+      else next = [...cur, id]
+      const slotsByDay = { ...prev.slotsByDay, [iso]: next }
       const stationId =
-        config.hasStations && prev.stationId && stationFree(prev.dates, slotIds, prev.stationId)
+        config.hasStations && prev.stationId && stationFree(prev.dates, slotsByDay, prev.stationId)
           ? prev.stationId
           : ''
-      return { ...prev, slotIds, stationId }
+      return { ...prev, slotsByDay, stationId }
     })
     setErrors((prev) => ({ ...prev, slots: '', stationId: '' }))
   }
 
-  function stationFree(dates, slotIds, stationId) {
-    if (!stationId || !dates.length || !slotIds.length) return true
-    return !dates.some((date) => slotIds.some((id) => isStationTaken(initialId, date, id, stationId)))
-  }
-
-  function slotBusy(slotId) {
-    return form.dates.some((date) => isSlotFull(initialId, date, slotId))
+  function stationFree(dates, slotsByDay, stationId) {
+    if (!stationId || !dates.length) return true
+    return !dates.some((date) =>
+      (slotsByDay[date] ?? []).some((id) => isStationTaken(initialId, date, id, stationId)),
+    )
   }
 
   function stationBusy(stationId) {
-    return !stationFree(form.dates, form.slotIds, stationId)
+    return !stationFree(form.dates, form.slotsByDay, stationId)
   }
 
   function validate() {
     const next = {}
     if (step === 2) {
       if (!form.dates.length) next.dates = 'Scegli almeno un giorno.'
-      if (!form.slotIds.length) next.slots = 'Scegli almeno uno slot.'
-      const clash = form.dates.some((date) => form.slotIds.some((id) => isSlotFull(initialId, date, id)))
-      if (clash) next.slots = 'Uno slot scelto non è più disponibile.'
+      if (form.dates.some((iso) => daySlots(iso).length === 0)) {
+        next.slots = 'Scegli un orario per ogni giorno.'
+      } else {
+        const clash = form.dates.some((iso) => daySlots(iso).some((id) => isSlotFull(initialId, iso, id)))
+        if (clash) next.slots = 'Uno slot scelto non è più disponibile.'
+      }
       if (config?.hasStations) {
         if (!form.stationId) next.stationId = 'Scegli una postazione.'
-        else if (!stationFree(form.dates, form.slotIds, form.stationId)) {
+        else if (!stationFree(form.dates, form.slotsByDay, form.stationId)) {
           next.stationId = 'Postazione già occupata.'
         }
       }
@@ -219,10 +238,7 @@ export default function Booking({ initialId = '', onClose }) {
       return
     }
     if (!validate()) return
-    const payload = {
-      eventId: initialId,
-      dates: form.dates,
-      slotIds: form.slotIds,
+    const base = {
       stationId: form.stationId,
       firstName: form.firstName.trim(),
       lastName: form.lastName.trim(),
@@ -234,9 +250,29 @@ export default function Booking({ initialId = '', onClose }) {
         .map((item) => ({ ...item, value: String(item.value).trim() }))
         .filter((item) => item.value),
     }
-    const result = isRequest ? await submitQuoteRequest(payload) : await addBooking(payload)
-    if (!result.ok) {
-      setErrors({ slots: result.error })
+    const days = sortedDates.filter((day) => daySlots(day).length > 0)
+    for (const day of days) {
+      const conflict = bookingConflict(
+        { eventId: initialId, dates: [day], slotIds: daySlots(day), stationId: form.stationId },
+        '',
+      )
+      if (conflict) {
+        setErrors({ slots: conflict })
+        setStep(2)
+        return
+      }
+    }
+    let firstErr = null
+    for (const day of days) {
+      const payload = { eventId: initialId, dates: [day], slotIds: daySlots(day), ...base }
+      const result = isRequest ? await submitQuoteRequest(payload) : await addBooking(payload)
+      if (!result.ok) {
+        firstErr = result.error
+        break
+      }
+    }
+    if (firstErr) {
+      setErrors({ slots: firstErr })
       setStep(2)
       return
     }
@@ -249,6 +285,11 @@ export default function Booking({ initialId = '', onClose }) {
   }
 
   if (!config) return null
+
+  const bookingLines = sortedDates.map((iso) => ({
+    iso,
+    slots: daySlots(iso).map(slotLabel).filter(Boolean),
+  }))
 
   const closeBtn = (
     <button className="book-close" type="button" onClick={onClose} aria-label="Chiudi">
@@ -271,17 +312,15 @@ export default function Booking({ initialId = '', onClose }) {
       {isRequest ? (
         <p>
           Grazie {form.firstName || ''}. Abbiamo ricevuto la tua richiesta per <strong>{config.name}</strong>:{' '}
-          {form.dates.map(formatISO).join(', ')} · {selectedSlots.map((slot) => `${slot.start}–${slot.end}`).join(', ')}.
-          Ti invieremo un preventivo a <strong>{form.email}</strong>: la data sarà confermata dopo l’accettazione e il
-          pagamento.
+          {bookingLines.map((row) => `${formatISO(row.iso)} (${row.slots.join(', ')})`).join(' · ')}. Ti invieremo un
+          preventivo a <strong>{form.email}</strong>: la data sarà confermata dopo l’accettazione e il pagamento.
         </p>
       ) : (
         <p>
           Grazie {form.firstName || ''}. Prenotazione per <strong>{config.name}</strong>:{' '}
-          {form.dates.map(formatISO).join(', ')} ·{' '}
-          {selectedSlots.map((slot) => `${slot.start}–${slot.end}`).join(', ')}
-          {selectedStation ? ` · ${selectedStation.label}` : ''}. Ti invieremo una mail
-          a <strong>{form.email}</strong> con il riepilogo
+          {bookingLines.map((row) => `${formatISO(row.iso)} (${row.slots.join(', ')})`).join(' · ')}
+          {selectedStation ? ` · ${selectedStation.label}` : ''}. Ti invieremo una mail a <strong>{form.email}</strong>{' '}
+          con il riepilogo
           {config.hasQr ? ', il pass QR per la reception' : ''} e il link per annullare.
         </p>
       )}
@@ -350,24 +389,38 @@ export default function Booking({ initialId = '', onClose }) {
                     {errors.dates ? <p className="book-error">{errors.dates}</p> : null}
                     {config.slots.length === 0 ? (
                       <p className="book-error">Nessuno slot orario disponibile.</p>
+                    ) : form.dates.length === 0 ? (
+                      <p className="book-hint">Scegli uno o più giorni dal calendario.</p>
                     ) : (
-                      <div className="book-slots">
-                        {config.slots.map((slot) => {
-                          const busy = form.dates.length > 0 && slotBusy(slot.id)
-                          const on = form.slotIds.includes(slot.id)
-                          return (
-                            <button
-                              key={slot.id}
-                              type="button"
-                              className={`book-slot${on ? ' is-on' : ''}${busy ? ' is-full' : ''}`}
-                              disabled={!form.dates.length || busy}
-                              onClick={() => toggleSlot(slot.id)}
-                            >
-                              {slot.start} – {slot.end}
-                              {busy ? ' (pieno)' : ''}
-                            </button>
-                          )
-                        })}
+                      <div className="book-byday">
+                        {sortedDates.map((iso) => (
+                          <div className="book-byday-row" key={iso}>
+                            <div className="book-byday-head">
+                              <span className="book-byday-day">{formatISO(iso)}</span>
+                              {config.allowMultiSlot ? (
+                                <span className="book-byday-mini">orari di questo giorno</span>
+                              ) : null}
+                            </div>
+                            <div className="book-slots">
+                              {config.slots.map((slot) => {
+                                const busy = isSlotFull(initialId, iso, slot.id)
+                                const on = daySlots(iso).includes(slot.id)
+                                return (
+                                  <button
+                                    key={slot.id}
+                                    type="button"
+                                    className={`book-slot${on ? ' is-on' : ''}${busy ? ' is-full' : ''}`}
+                                    disabled={busy}
+                                    onClick={() => toggleSlot(iso, slot.id)}
+                                  >
+                                    {slot.start} – {slot.end}
+                                    {busy ? ' (pieno)' : ''}
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     )}
                     {errors.slots ? <p className="book-error">{errors.slots}</p> : null}
@@ -380,20 +433,19 @@ export default function Booking({ initialId = '', onClose }) {
                             value={form.stationId}
                             onChange={(id) => setField('stationId', id)}
                             isBusy={stationBusy}
-                            ready={form.dates.length > 0 && form.slotIds.length > 0}
+                            ready={form.dates.length > 0 && anySlot}
                           />
                         ) : (
                           <div className="book-slots">
                             {(config.stations ?? []).map((station) => {
-                              const busy =
-                                form.dates.length > 0 && form.slotIds.length > 0 && stationBusy(station.id)
+                              const busy = form.dates.length > 0 && anySlot && stationBusy(station.id)
                               const on = form.stationId === station.id
                               return (
                                 <button
                                   key={station.id}
                                   type="button"
                                   className={`book-slot${on ? ' is-on' : ''}${busy ? ' is-full' : ''}`}
-                                  disabled={!form.dates.length || !form.slotIds.length || busy}
+                                  disabled={!form.dates.length || !anySlot || busy}
                                   onClick={() => setField('stationId', on ? '' : station.id)}
                                 >
                                   {station.label}
@@ -550,12 +602,14 @@ export default function Booking({ initialId = '', onClose }) {
                         <dd>{config.name}</dd>
                       </div>
                       <div>
-                        <dt>Giorni</dt>
-                        <dd>{form.dates.map(formatISO).join(', ')}</dd>
-                      </div>
-                      <div>
-                        <dt>Orari</dt>
-                        <dd>{selectedSlots.map((slot) => `${slot.start}–${slot.end}`).join(', ')}</dd>
+                        <dt>Giorni e orari</dt>
+                        <dd>
+                          {bookingLines.map((row) => (
+                            <div key={row.iso}>
+                              <strong>{formatISO(row.iso)}</strong>: {row.slots.join(', ') || '—'}
+                            </div>
+                          ))}
+                        </dd>
                       </div>
                       {selectedStation ? (
                         <div>

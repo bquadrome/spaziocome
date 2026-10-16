@@ -530,6 +530,23 @@ export default function AdminEvent({ eventId }) {
       </section>
 
       <section className="admin-block">
+        <h2>Notifiche staff</h2>
+        <p className="admin-hint">
+          Indirizzo dove ricevere le mail di prenotazione/richiesta per questo spazio. Vuoto = indirizzo predefinito
+          globale.
+        </p>
+        <label className="admin-field">
+          <span>Email destinatario</span>
+          <input
+            type="email"
+            value={event.emails?.notify ?? ''}
+            placeholder="prenotazioni@spaziocome.it"
+            onChange={(e) => set({ emails: { ...(event.emails ?? {}), notify: e.target.value } })}
+          />
+        </label>
+      </section>
+
+      <section className="admin-block">
         <h2>Mail conferma</h2>
         <p className="admin-hint">
           Segnaposto: {'{{nome}}'} {'{{spazio}}'} {'{{date}}'} {'{{slot}}'}

@@ -6830,3 +6830,11 @@ button.btn {
     animation: none;
   }
 }
+
+/* Prenotazione: orari indipendenti per giorno (multi-giorno) */
+.book-byday { display: flex; flex-direction: column; gap: 14px; margin-top: 6px; }
+.book-byday-row { border: 1px solid rgba(0, 0, 0, 0.12); border-radius: 16px; padding: 12px 14px; background: #fff; }
+.book-byday-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.book-byday-day { font-weight: 700; font-size: 15px; text-transform: capitalize; }
+.book-byday-mini { font-size: 12px; color: rgba(0, 0, 0, 0.5); }
+.book-byday .book-slots { margin: 0; }
