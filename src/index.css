@@ -5362,10 +5362,10 @@ button.btn {
   justify-items: start;
   margin: 0 0 14px;
   padding: 14px 16px;
-  border: 1px solid #f3d38b;
+  border: 1px solid #c3d4ff;
   border-radius: var(--radius-card);
-  background: #fff8e6;
-  color: #7a5200;
+  background: #eef3ff;
+  color: var(--blue);
   font-size: 14px;
 }
 
@@ -5655,10 +5655,10 @@ button.btn {
   gap: 12px;
   margin: 0 0 16px;
   padding: 14px 18px;
-  border: 1px solid #f3d38b;
+  border: 1px solid #c3d4ff;
   border-radius: var(--radius-card);
-  background: #fff8e6;
-  color: #7a5200;
+  background: #eef3ff;
+  color: var(--blue);
   text-decoration: none;
 }
 
