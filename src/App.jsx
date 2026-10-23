@@ -56,6 +56,9 @@ function usePathname() {
 
 function AppRoutes({ path }) {
   const [bookId, setBookId] = useState(null)
+  useEffect(() => {
+    if (import.meta.env.DEV && window.location.hash === '#dev-b') setBookId('meeting')
+  }, [])
   const isAdmin = path === '/admin' || path.startsWith('/admin/')
   const isStaff = path === '/staff' || path === '/staff/'
   const isReception = path === '/reception' || path === '/reception/'

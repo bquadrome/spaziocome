@@ -5105,6 +5105,46 @@ button.btn {
   font-weight: 600;
 }
 
+.settings-subhead {
+  margin: 18px 0 8px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.mail-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 14px;
+}
+
+.mail-tags-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-60);
+  margin-right: 2px;
+}
+
+.mail-tag {
+  padding: 4px 9px;
+  border: 1px solid #c9ccd8;
+  border-radius: 999px;
+  background: #f3f4f8;
+  color: #3a3f52;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.mail-tag:hover {
+  background: #e7e9f2;
+  border-color: #0047f8;
+  color: #0047f8;
+}
+
 .settings-confirm {
   margin-top: 16px;
   padding: 14px 16px;

@@ -1,5 +1,5 @@
 import { useEffect, useSyncExternalStore } from 'react'
-import { supabase } from '../lib/supabase.js'
+import { supabase, hasSupabase } from '../lib/supabase.js'
 
 export const DEFAULT_TYPE_COLORS = {
   coworking: '#7c4dff',
@@ -191,8 +191,64 @@ function emit() {
   listeners.forEach((fn) => fn(state))
 }
 
+const DEMO_EVENT = {
+  id: 'meeting',
+  enabled: true,
+  name: 'Meeting Room',
+  intro: '',
+  slots: [
+    { id: 'm', start: '09:00', end: '13:00' },
+    { id: 'a', start: '14:00', end: '18:00' },
+  ],
+  weekdays: [1, 2, 3, 4, 5, 6, 0],
+  blockedDates: [],
+  allowMultiDay: true,
+  allowMultiSlot: true,
+  maxDays: 5,
+  maxSlots: 2,
+  hasStations: false,
+  hasQr: false,
+  requestMode: false,
+  maxCapacity: 1,
+  stations: [],
+  fields: {
+    firstName: { enabled: true, required: true },
+    lastName: { enabled: true, required: false },
+    email: { enabled: true, required: true },
+    phone: { enabled: true, required: false },
+    notes: { enabled: true, required: false, label: 'Note', placeholder: '' },
+  },
+  extraMenu: { enabled: false, required: false, label: '', options: [] },
+  customFields: [],
+  emails: {},
+}
+const DEMO_OCC = [
+  { eventId: 'meeting', date: '2026-10-21', slotId: 'a', seatKey: '', bookingId: 'demo-seed' },
+]
+function loadDemoSeed() {
+  state = { events: { meeting: DEMO_EVENT }, bookings: [], occupancy: DEMO_OCC.slice(), guests: [], requests: [], colors: typeColors(null) }
+  emit()
+}
+let demoSeq = 1
+function devAddBooking(payload) {
+  const id = 'demo-' + demoSeq++
+  const rows = []
+  for (const date of payload.dates ?? []) {
+    for (const slotId of payload.slotIds ?? []) {
+      rows.push({ eventId: payload.eventId, date, slotId, seatKey: payload.stationId || '', bookingId: id })
+    }
+  }
+  state = { ...state, occupancy: [...state.occupancy, ...rows] }
+  emit()
+  return { ok: true, booking: { id, status: 'active', ...payload } }
+}
+
 export async function refreshStore() {
   try {
+    if (!hasSupabase) {
+      if (import.meta.env.DEV) loadDemoSeed()
+      return
+    }
     const { data: eventRows, error: eventErr } = await supabase.from('events').select('*')
     if (eventErr) {
       console.error(eventErr)
@@ -363,6 +419,20 @@ export async function patchEvent(id, patch) {
   )
 }
 
+// Salva subito lo spazio, annullando l'autosave in attesa (per il tasto Salva).
+export async function flushEvent(id) {
+  const timer = patchTimers.get(id)
+  if (timer) {
+    clearTimeout(timer)
+    patchTimers.delete(id)
+  }
+  const current = state.events[id]
+  if (!current) return { ok: false, error: 'Spazio non trovato.' }
+  const { error } = await supabase.from('events').update(eventToRow(current)).eq('id', id)
+  if (error) return { ok: false, error: failMessage(error) }
+  return { ok: true }
+}
+
 const GOOGLE_SYNC = false
 
 function syncCalendar(kind, id, action) {
@@ -384,6 +454,7 @@ function sendBookingMail(bookingId, kind, by = 'staff', token = '') {
 }
 
 export async function addBooking(payload) {
+  if (import.meta.env.DEV && !hasSupabase) return devAddBooking(payload)
   const { data, error } = await supabase.rpc('place_booking', {
     p_event_id: payload.eventId,
     p_dates: payload.dates,
@@ -458,6 +529,7 @@ function sendQuoteMail(kind, { id, token } = {}) {
 }
 
 export async function submitQuoteRequest(payload) {
+  if (import.meta.env.DEV && !hasSupabase) return { ok: true, id: 'demo-quote' }
   const { data, error } = await supabase.rpc('submit_quote_request', {
     p_event_id: payload.eventId,
     p_dates: payload.dates,
@@ -813,6 +885,28 @@ export function toISO(year, month, day) {
 export function parseISO(iso) {
   const [y, m, d] = iso.split('-').map(Number)
   return new Date(y, m - 1, d)
+}
+
+// Anticipo minimo richiesto per prenotare uno slot dal sito pubblico.
+export const BOOKING_LEAD_HOURS = 12
+
+function slotStartAt(iso, slot) {
+  const base = parseISO(iso)
+  const [h, m] = String(slot?.start ?? '00:00').split(':').map(Number)
+  base.setHours(Number.isFinite(h) ? h : 0, Number.isFinite(m) ? m : 0, 0, 0)
+  return base
+}
+
+// true se lo slot inizia entro meno di BOOKING_LEAD_HOURS ore da adesso.
+export function isSlotTooSoon(iso, slot) {
+  return slotStartAt(iso, slot).getTime() - Date.now() < BOOKING_LEAD_HOURS * 3600 * 1000
+}
+
+// Come dateHasFreeSlot ma esclude anche gli slot troppo vicini (meno di 12h).
+export function dateHasBookableSlot(eventId, iso) {
+  const config = state.events[eventId]
+  if (!config?.slots?.length) return false
+  return config.slots.some((slot) => !isSlotFull(eventId, iso, slot.id) && !isSlotTooSoon(iso, slot))
 }
 
 export function formatISO(iso) {

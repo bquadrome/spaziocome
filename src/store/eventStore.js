@@ -204,11 +204,14 @@ export async function deleteSiteEvent(id) {
 }
 
 export async function setRegistrationStatus(id, status) {
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('event_registrations')
     .update({ status, cancelled_at: status === 'cancelled' ? new Date().toISOString() : null })
     .eq('id', id)
+    .select('token')
+    .maybeSingle()
   if (error) return { ok: false, error: failMessage(error) }
+  if (status === 'cancelled' && data?.token) sendEventMail('cancelled', data.token)
   await refreshSiteEvents()
   return { ok: true }
 }
@@ -234,6 +237,32 @@ function sendEventMail(kind, token) {
     .then(({ error }) => {
       if (error) console.error(error)
     })
+}
+
+// Template globali delle mail evento (conferma/annullo iscrizione), salvati in site_content.
+const EVENT_EMAILS_ID = 'event-emails'
+
+export async function fetchEventEmails() {
+  const { data, error } = await supabase
+    .from('site_content')
+    .select('data')
+    .eq('id', EVENT_EMAILS_ID)
+    .maybeSingle()
+  const d = (!error && data?.data) || {}
+  return {
+    registered: { subject: d.registered?.subject ?? '', body: d.registered?.body ?? '' },
+    cancelled: { subject: d.cancelled?.subject ?? '', body: d.cancelled?.body ?? '' },
+  }
+}
+
+export async function saveEventEmails(value) {
+  const { error } = await supabase.from('site_content').upsert({
+    id: EVENT_EMAILS_ID,
+    data: value,
+    updated_at: new Date().toISOString(),
+  })
+  if (error) return { ok: false, error: failMessage(error) }
+  return { ok: true }
 }
 
 let publicCache = { at: 0, items: null }

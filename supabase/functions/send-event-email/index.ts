@@ -41,6 +41,16 @@ function escapeHtml(text: string) {
     .replace(/"/g, '&quot;')
 }
 
+function fill(tpl: string, vars: Record<string, string>) {
+  return String(tpl ?? '').replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? '')
+}
+
+function textHtml(text: string) {
+  return escapeHtml(text)
+    .replace(/https?:\/\/[^\s<]+/g, (url) => `<a href="${url}">${url}</a>`)
+    .replace(/\n/g, '<br>')
+}
+
 function dateLabel(iso: string) {
   const [y, m, d] = String(iso).slice(0, 10).split('-').map(Number)
   if (!y || !m || !d) return String(iso)
@@ -131,27 +141,51 @@ Deno.serve(async (req) => {
     const quando = `${dateLabel(event.on_date)}, ${event.time_start}–${event.time_end}`
     const pass = `${site}/iscrizione/${reg.token}`
     const page = `${site}/eventi/${event.slug}`
+    const vars = { nome, evento: event.title, quando, link: pass, pagina: page }
+
+    // Template globali personalizzati (site_content id='event-emails'); vuoto = testo predefinito.
+    const { data: tplRow } = await supabase
+      .from('site_content')
+      .select('data')
+      .eq('id', 'event-emails')
+      .maybeSingle()
+    const tpl = ((tplRow?.data ?? {}) as Record<string, { subject?: string; body?: string }>)[kind] ?? {}
+    const customSubject = fill(tpl.subject ?? '', vars).trim()
+    const customBody = fill(tpl.body ?? '', vars).trim()
 
     let subject = ''
     let text = ''
     let html = ''
     if (kind === 'registered') {
-      subject = `Iscrizione confermata — ${event.title}`
-      text = `Ciao ${nome},\n\nla tua iscrizione a "${event.title}" è confermata.\nQuando: ${quando}\nDove: Spazio COME\n\nIl tuo pass personale (QR da mostrare all'ingresso) e il link per annullare:\n${pass}\n\nDettagli evento: ${page}\n\nA presto,\nSpazio COME`
-      html = layout(
-        `<p>Ciao ${escapeHtml(nome)},</p><p>la tua iscrizione a <strong>${escapeHtml(event.title)}</strong> è confermata.</p>` +
-          `<p style="margin:0">Quando: <strong>${escapeHtml(quando)}</strong><br>Dove: <strong>Spazio COME</strong></p>` +
-          `<p style="margin:20px 0 6px">Mostra il QR del tuo pass all'ingresso. Dallo stesso link puoi annullare l'iscrizione.</p>` +
-          `<p>${button(pass, 'Apri il tuo pass')}</p>` +
-          `<p style="color:#555">Dettagli evento: <a href="${page}">${page}</a></p><p>A presto,<br>Spazio COME</p>`,
-      )
+      subject = customSubject || `Iscrizione confermata — ${event.title}`
+      if (customBody) {
+        const linkBlock = /\{\{link\}\}/.test(tpl.body ?? '')
+          ? ''
+          : `\n\nIl tuo pass personale (QR da mostrare all'ingresso) e il link per annullare:\n${pass}`
+        text = customBody + linkBlock
+        html = layout(textHtml(text))
+      } else {
+        text = `Ciao ${nome},\n\nla tua iscrizione a "${event.title}" è confermata.\nQuando: ${quando}\nDove: Spazio COME\n\nIl tuo pass personale (QR da mostrare all'ingresso) e il link per annullare:\n${pass}\n\nDettagli evento: ${page}\n\nA presto,\nSpazio COME`
+        html = layout(
+          `<p>Ciao ${escapeHtml(nome)},</p><p>la tua iscrizione a <strong>${escapeHtml(event.title)}</strong> è confermata.</p>` +
+            `<p style="margin:0">Quando: <strong>${escapeHtml(quando)}</strong><br>Dove: <strong>Spazio COME</strong></p>` +
+            `<p style="margin:20px 0 6px">Mostra il QR del tuo pass all'ingresso. Dallo stesso link puoi annullare l'iscrizione.</p>` +
+            `<p>${button(pass, 'Apri il tuo pass')}</p>` +
+            `<p style="color:#555">Dettagli evento: <a href="${page}">${page}</a></p><p>A presto,<br>Spazio COME</p>`,
+        )
+      }
     } else {
-      subject = `Iscrizione annullata — ${event.title}`
-      text = `Ciao ${nome},\n\nla tua iscrizione a "${event.title}" (${quando}) è stata annullata.\n\nSe cambi idea puoi iscriverti di nuovo: ${page}\n\nSpazio COME`
-      html = layout(
-        `<p>Ciao ${escapeHtml(nome)},</p><p>la tua iscrizione a <strong>${escapeHtml(event.title)}</strong> (${escapeHtml(quando)}) è stata annullata.</p>` +
-          `<p>Se cambi idea puoi iscriverti di nuovo: <a href="${page}">${page}</a></p><p>Spazio COME</p>`,
-      )
+      subject = customSubject || `Iscrizione annullata — ${event.title}`
+      if (customBody) {
+        text = customBody
+        html = layout(textHtml(text))
+      } else {
+        text = `Ciao ${nome},\n\nla tua iscrizione a "${event.title}" (${quando}) è stata annullata.\n\nSe cambi idea puoi iscriverti di nuovo: ${page}\n\nSpazio COME`
+        html = layout(
+          `<p>Ciao ${escapeHtml(nome)},</p><p>la tua iscrizione a <strong>${escapeHtml(event.title)}</strong> (${escapeHtml(quando)}) è stata annullata.</p>` +
+            `<p>Se cambi idea puoi iscriverti di nuovo: <a href="${page}">${page}</a></p><p>Spazio COME</p>`,
+        )
+      }
     }
 
     const cfg = await mailConfig(supabase)

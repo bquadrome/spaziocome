@@ -1,10 +1,12 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import CalendarMonth from './CalendarMonth.jsx'
 import Time24 from './Time24.jsx'
+import MailTags from './MailTags.jsx'
 import CoworkingMap, { COWORKING_ID, COWORKING_SEATS, usesCoworkingMap } from '../CoworkingMap.jsx'
 import {
   CUSTOM_TYPES,
   WEEKDAYS,
+  flushEvent,
   makeStations,
   patchEvent,
   typeColor,
@@ -56,11 +58,30 @@ export default function AdminEvent({ eventId }) {
   const now = new Date()
   const [cursor, setCursor] = useState({ y: now.getFullYear(), m: now.getMonth() })
   const [pick, setPick] = useState('')
+  const [saveBusy, setSaveBusy] = useState(false)
+  const [saveNotice, setSaveNotice] = useState('')
+  const [saveError, setSaveError] = useState('')
+  const emailFocus = useRef(null)
 
   if (!event) return <p className="admin-empty">Evento non trovato.</p>
 
   function set(patch) {
     patchEvent(eventId, patch)
+    setSaveNotice('')
+    setSaveError('')
+  }
+
+  async function saveNow() {
+    setSaveBusy(true)
+    setSaveError('')
+    setSaveNotice('')
+    const result = await flushEvent(eventId)
+    setSaveBusy(false)
+    if (!result.ok) {
+      setSaveError(result.error)
+      return
+    }
+    setSaveNotice('Modifiche salvate.')
   }
 
   function shift(delta) {
@@ -121,6 +142,28 @@ export default function AdminEvent({ eventId }) {
     set({ emails: { ...emails, [kind]: { ...(emails[kind] ?? {}), ...patch } } })
   }
 
+  const trackEmailFocus = (kind, field) => (e) => {
+    emailFocus.current = { kind, field, el: e.target }
+  }
+
+  // Inserisce {{tag}} nel campo mail attivo (o, se nessuno, in coda al corpo indicato).
+  function insertEmailTag(tag, fbKind, fbField = 'body') {
+    const token = `{{${tag}}}`
+    const f = emailFocus.current ?? { kind: fbKind, field: fbField, el: null }
+    const value = event.emails?.[f.kind]?.[f.field] ?? ''
+    const el = f.el
+    const start = el ? el.selectionStart : value.length
+    const end = el ? el.selectionEnd : value.length
+    setEmail(f.kind, { [f.field]: value.slice(0, start) + token + value.slice(end) })
+    if (el) {
+      requestAnimationFrame(() => {
+        el.focus()
+        const pos = start + token.length
+        el.setSelectionRange(pos, pos)
+      })
+    }
+  }
+
   const slots = Array.isArray(event.slots) ? event.slots : []
   const stations = event.stations ?? []
   const isCoworking = eventId === COWORKING_ID
@@ -168,7 +211,13 @@ export default function AdminEvent({ eventId }) {
           <p className="gest-kicker">Impostazioni spazio</p>
           <h1>{event.name || 'Evento'}</h1>
         </div>
+        <button type="button" className="btn-save" style={{ marginLeft: 'auto' }} onClick={saveNow} disabled={saveBusy}>
+          {saveBusy ? 'Salvataggio…' : 'Salva modifiche'}
+        </button>
       </header>
+      <p className="admin-hint">Le modifiche si salvano da sole; usa “Salva modifiche” per conferma immediata.</p>
+      {saveError ? <p className="book-error">{saveError}</p> : null}
+      {saveNotice ? <p className="settings-notice">{saveNotice}</p> : null}
 
       <section className="admin-block">
         <h2>Testi e visibilità</h2>
@@ -548,13 +597,12 @@ export default function AdminEvent({ eventId }) {
 
       <section className="admin-block">
         <h2>Mail conferma</h2>
-        <p className="admin-hint">
-          Segnaposto: {'{{nome}}'} {'{{spazio}}'} {'{{date}}'} {'{{slot}}'}
-        </p>
+        <p className="admin-hint">Clicca un tag per inserirlo nel campo.</p>
         <label className="admin-field">
           <span>Oggetto</span>
           <input
             value={event.emails?.confirm?.subject ?? ''}
+            onFocus={trackEmailFocus('confirm', 'subject')}
             onChange={(e) => setEmail('confirm', { subject: e.target.value })}
           />
         </label>
@@ -563,17 +611,24 @@ export default function AdminEvent({ eventId }) {
           <textarea
             rows={7}
             value={event.emails?.confirm?.body ?? ''}
+            onFocus={trackEmailFocus('confirm', 'body')}
             onChange={(e) => setEmail('confirm', { body: e.target.value })}
           />
         </label>
+        <MailTags
+          tags={['nome', 'spazio', 'date', 'slot', 'link']}
+          onInsert={(tag) => insertEmailTag(tag, 'confirm')}
+        />
       </section>
 
       <section className="admin-block">
         <h2>Mail annullamento</h2>
+        <p className="admin-hint">Clicca un tag per inserirlo nel campo.</p>
         <label className="admin-field">
           <span>Oggetto</span>
           <input
             value={event.emails?.cancel?.subject ?? ''}
+            onFocus={trackEmailFocus('cancel', 'subject')}
             onChange={(e) => setEmail('cancel', { subject: e.target.value })}
           />
         </label>
@@ -582,9 +637,14 @@ export default function AdminEvent({ eventId }) {
           <textarea
             rows={7}
             value={event.emails?.cancel?.body ?? ''}
+            onFocus={trackEmailFocus('cancel', 'body')}
             onChange={(e) => setEmail('cancel', { body: e.target.value })}
           />
         </label>
+        <MailTags
+          tags={['nome', 'spazio', 'date', 'slot']}
+          onInsert={(tag) => insertEmailTag(tag, 'cancel')}
+        />
       </section>
     </div>
   )

@@ -10,10 +10,12 @@ import {
   submitQuoteRequest,
   customError,
   customValue,
-  dateHasFreeSlot,
+  dateHasBookableSlot,
   formatISO,
   isDateBookable,
   isSlotFull,
+  isSlotTooSoon,
+  BOOKING_LEAD_HOURS,
   isStationTaken,
   setCustomValue,
   useBookingStore,
@@ -66,7 +68,7 @@ export default function Booking({ initialId = '', onClose }) {
     const off = []
     for (let d = 1; d <= days; d += 1) {
       const iso = `${cursor.y}-${String(cursor.m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
-      if (!isDateBookable(config, iso) || !dateHasFreeSlot(initialId, iso)) off.push(iso)
+      if (!isDateBookable(config, iso) || !dateHasBookableSlot(initialId, iso)) off.push(iso)
     }
     return off
   }, [config, cursor, initialId, store.bookings])
@@ -117,7 +119,7 @@ export default function Booking({ initialId = '', onClose }) {
   }
 
   function toggleDate(iso) {
-    if (!config || !isDateBookable(config, iso) || !dateHasFreeSlot(initialId, iso)) return
+    if (!config || !isDateBookable(config, iso) || !dateHasBookableSlot(initialId, iso)) return
     setForm((prev) => {
       const has = prev.dates.includes(iso)
       let dates
@@ -145,6 +147,10 @@ export default function Booking({ initialId = '', onClose }) {
 
   function toggleSlot(iso, id) {
     if (!config) return
+    const slot = (config.slots ?? []).find((s) => s.id === id)
+    const already = (form.slotsByDay[iso] ?? []).includes(id)
+    // Consenti solo la deselezione di uno slot troppo vicino, non la selezione.
+    if (!already && slot && isSlotTooSoon(iso, slot)) return
     setForm((prev) => {
       const cur = prev.slotsByDay[iso] ?? []
       const has = cur.includes(id)
@@ -182,7 +188,14 @@ export default function Booking({ initialId = '', onClose }) {
         next.slots = 'Scegli un orario per ogni giorno.'
       } else {
         const clash = form.dates.some((iso) => daySlots(iso).some((id) => isSlotFull(initialId, iso, id)))
+        const tooSoon = form.dates.some((iso) =>
+          daySlots(iso).some((id) => {
+            const slot = (config?.slots ?? []).find((s) => s.id === id)
+            return slot && isSlotTooSoon(iso, slot)
+          }),
+        )
         if (clash) next.slots = 'Uno slot scelto non è più disponibile.'
+        else if (tooSoon) next.slots = `Prenota almeno ${BOOKING_LEAD_HOURS} ore prima dell’orario di inizio.`
       }
       if (config?.hasStations) {
         if (!form.stationId) next.stationId = 'Scegli una postazione.'
@@ -432,7 +445,9 @@ export default function Booking({ initialId = '', onClose }) {
                             </div>
                             <div className="book-slots">
                               {config.slots.map((slot) => {
-                                const busy = isSlotFull(initialId, iso, slot.id)
+                                const full = isSlotFull(initialId, iso, slot.id)
+                                const tooSoon = isSlotTooSoon(iso, slot)
+                                const busy = full || tooSoon
                                 const on = daySlots(iso).includes(slot.id)
                                 return (
                                   <button
@@ -443,7 +458,7 @@ export default function Booking({ initialId = '', onClose }) {
                                     onClick={() => toggleSlot(iso, slot.id)}
                                   >
                                     {slot.start} – {slot.end}
-                                    {busy ? ' (pieno)' : ''}
+                                    {full ? ' (pieno)' : tooSoon ? ` (min ${BOOKING_LEAD_HOURS}h)` : ''}
                                   </button>
                                 )
                               })}
